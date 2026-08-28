@@ -2,6 +2,8 @@
 
 **Intelligent Payment Risk Assessment and Fraud Monitoring System**
 
+**[Launch the public Streamlit demo](https://ai-riskguard-payment.streamlit.app/)**
+
 AI RiskGuard is a complete local internship project for a **Razorpay-style
 payment risk use case**. It demonstrates synthetic payment data engineering,
 imbalanced classification, explainable prototype risk rules, bounded risk

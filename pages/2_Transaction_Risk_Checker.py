@@ -31,6 +31,12 @@ render_header(
     "Analyze a safe synthetic payment event with the saved ML model and explainable rules.",
 )
 
+
+def clear_previous_result() -> None:
+    """Hide a result that belongs to the previously selected preset."""
+    st.session_state.pop("last_riskguard_result", None)
+
+
 with st.expander("How the final risk score is calculated"):
     st.markdown(
         f"""
@@ -63,6 +69,7 @@ preset_name = st.selectbox(
     ["normal", "medium", "high"],
     format_func=lambda value: value.title(),
     help="Choose a starting example, then change any field before analysis.",
+    on_change=clear_previous_result,
 )
 preset = samples[preset_name]
 
