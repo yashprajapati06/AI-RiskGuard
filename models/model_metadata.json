@@ -1,0 +1,201 @@
+{
+  "model_version": "1.0.0",
+  "selected_model": "logistic_regression",
+  "selection_reason": "Highest composite score: 35% recall, 35% F1, 20% ROC-AUC, and 10% precision. This prioritizes finding fraud while monitoring false positives.",
+  "training_timestamp": "2026-08-28T08:39:10.462986+00:00",
+  "dataset_size": 12000,
+  "training_rows": 9600,
+  "test_rows": 2400,
+  "fraud_rate": 0.05325,
+  "random_state": 42,
+  "test_size": 0.2,
+  "feature_list": [
+    "amount",
+    "payment_method",
+    "device_type",
+    "is_new_device",
+    "previous_failed_txns",
+    "txn_count_10min",
+    "avg_user_transaction_amount",
+    "location_change",
+    "merchant_risk_score",
+    "account_age_days",
+    "hour_of_day",
+    "is_weekend",
+    "international_transaction",
+    "amount_ratio",
+    "is_high_amount",
+    "is_high_velocity",
+    "failed_attempt_risk",
+    "unusual_hour"
+  ],
+  "transformed_feature_count": 23,
+  "models": {
+    "logistic_regression": {
+      "accuracy": 0.7541666666666667,
+      "precision": 0.1321656050955414,
+      "recall": 0.6484375,
+      "f1": 0.21957671957671956,
+      "roc_auc": 0.7626265404929576,
+      "false_positive_rate": 0.23987676056338028,
+      "false_negative_rate": 0.3515625,
+      "confusion_matrix": [
+        [
+          1727,
+          545
+        ],
+        [
+          45,
+          83
+        ]
+      ],
+      "tn": 1727,
+      "fp": 545,
+      "fn": 45,
+      "tp": 83,
+      "selection_score": 0.46954684545999753
+    },
+    "random_forest": {
+      "accuracy": 0.9458333333333333,
+      "precision": 0.42857142857142855,
+      "recall": 0.046875,
+      "f1": 0.08450704225352113,
+      "roc_auc": 0.6708159110915493,
+      "false_positive_rate": 0.0035211267605633804,
+      "false_negative_rate": 0.953125,
+      "confusion_matrix": [
+        [
+          2264,
+          8
+        ],
+        [
+          122,
+          6
+        ]
+      ],
+      "tn": 2264,
+      "fp": 8,
+      "fn": 122,
+      "tp": 6,
+      "selection_score": 0.2230040398641851
+    }
+  },
+  "selected_model_metrics": {
+    "accuracy": 0.7541666666666667,
+    "precision": 0.1321656050955414,
+    "recall": 0.6484375,
+    "f1": 0.21957671957671956,
+    "roc_auc": 0.7626265404929576,
+    "false_positive_rate": 0.23987676056338028,
+    "false_negative_rate": 0.3515625,
+    "confusion_matrix": [
+      [
+        1727,
+        545
+      ],
+      [
+        45,
+        83
+      ]
+    ],
+    "tn": 1727,
+    "fp": 545,
+    "fn": 45,
+    "tp": 83,
+    "selection_score": 0.46954684545999753
+  },
+  "global_feature_importance": [
+    {
+      "feature": "numeric__txn_count_10min",
+      "importance": 0.47015997481636485
+    },
+    {
+      "feature": "numeric__amount_ratio",
+      "importance": 0.4257736592704626
+    },
+    {
+      "feature": "numeric__merchant_risk_score",
+      "importance": 0.4229809546685638
+    },
+    {
+      "feature": "numeric__previous_failed_txns",
+      "importance": 0.4064657223783247
+    },
+    {
+      "feature": "numeric__is_new_device",
+      "importance": 0.3041187001339647
+    },
+    {
+      "feature": "numeric__location_change",
+      "importance": 0.2881074044092611
+    },
+    {
+      "feature": "numeric__unusual_hour",
+      "importance": 0.24827349737928353
+    },
+    {
+      "feature": "numeric__international_transaction",
+      "importance": 0.2385117373572161
+    },
+    {
+      "feature": "categorical__payment_method_Card",
+      "importance": 0.14311062337709635
+    },
+    {
+      "feature": "categorical__device_type_iOS",
+      "importance": 0.13717578398616267
+    },
+    {
+      "feature": "categorical__device_type_Web",
+      "importance": 0.130750378441151
+    },
+    {
+      "feature": "numeric__account_age_days",
+      "importance": 0.08120120169421863
+    },
+    {
+      "feature": "categorical__payment_method_NetBanking",
+      "importance": 0.08082916729481684
+    },
+    {
+      "feature": "numeric__amount",
+      "importance": 0.05751378141724877
+    },
+    {
+      "feature": "categorical__payment_method_UPI",
+      "importance": 0.05230793710438901
+    },
+    {
+      "feature": "categorical__device_type_Android",
+      "importance": 0.049200828906715004
+    },
+    {
+      "feature": "categorical__payment_method_Wallet",
+      "importance": 0.040879263557695576
+    },
+    {
+      "feature": "numeric__is_high_velocity",
+      "importance": 0.03358208025472425
+    },
+    {
+      "feature": "numeric__avg_user_transaction_amount",
+      "importance": 0.030990747504403136
+    },
+    {
+      "feature": "numeric__is_high_amount",
+      "importance": 0.024900826948346194
+    },
+    {
+      "feature": "numeric__hour_of_day",
+      "importance": 0.019471583438522306
+    },
+    {
+      "feature": "numeric__failed_attempt_risk",
+      "importance": 0.006467149353554398
+    },
+    {
+      "feature": "numeric__is_weekend",
+      "importance": 0.0004865153943328695
+    }
+  ]
+}

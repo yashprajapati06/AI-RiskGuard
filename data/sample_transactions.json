@@ -1,0 +1,47 @@
+{
+  "normal": {
+    "amount": 500.0,
+    "payment_method": "UPI",
+    "device_type": "Android",
+    "is_new_device": 0,
+    "previous_failed_txns": 0,
+    "txn_count_10min": 1,
+    "avg_user_transaction_amount": 1200.0,
+    "location_change": 0,
+    "merchant_risk_score": 0.12,
+    "account_age_days": 800,
+    "hour_of_day": 14,
+    "is_weekend": 0,
+    "international_transaction": 0
+  },
+  "medium": {
+    "amount": 15000.0,
+    "payment_method": "Card",
+    "device_type": "Web",
+    "is_new_device": 1,
+    "previous_failed_txns": 2,
+    "txn_count_10min": 3,
+    "avg_user_transaction_amount": 4500.0,
+    "location_change": 0,
+    "merchant_risk_score": 0.55,
+    "account_age_days": 250,
+    "hour_of_day": 21,
+    "is_weekend": 1,
+    "international_transaction": 0
+  },
+  "high": {
+    "amount": 80000.0,
+    "payment_method": "UPI",
+    "device_type": "Android",
+    "is_new_device": 1,
+    "previous_failed_txns": 6,
+    "txn_count_10min": 10,
+    "avg_user_transaction_amount": 2000.0,
+    "location_change": 1,
+    "merchant_risk_score": 0.85,
+    "account_age_days": 100,
+    "hour_of_day": 2,
+    "is_weekend": 0,
+    "international_transaction": 1
+  }
+}
