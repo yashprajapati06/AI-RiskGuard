@@ -73,13 +73,13 @@ display_frame = transactions[display_columns].rename(
         "created_at": "Timestamp (UTC)",
         "amount": "Amount",
         "payment_method": "Payment Method",
-        "fraud_probability": "Fraud Probability",
+        "fraud_probability": "ML Likelihood Estimate",
         "final_risk_score": "Final Risk Score",
         "risk_level": "Risk Level",
         "recommended_action": "Recommended Action",
     }
 )
-display_frame["Fraud Probability"] = display_frame["Fraud Probability"].map(
+display_frame["ML Likelihood Estimate"] = display_frame["ML Likelihood Estimate"].map(
     lambda value: f"{value * 100:.2f}%"
 )
 st.dataframe(display_frame, hide_index=True, width="stretch")
@@ -90,8 +90,9 @@ st.download_button(
     mime="text/csv",
 )
 st.caption(
-    "The export contains synthetic/anonymized project fields only. Do not add real "
-    "payment credentials to this workflow."
+    "The export contains fully synthetic or manually entered demonstration fields. "
+    "Do not add real payment credentials or personal data to this workflow. The ML "
+    "likelihood estimate is not a calibrated real-world fraud probability."
 )
 
 st.subheader("Transaction details")

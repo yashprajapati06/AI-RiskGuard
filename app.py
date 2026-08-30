@@ -22,7 +22,7 @@ render_header(
 needs_training = not model_artifacts_are_valid()
 needs_data = not DATA_PATH.exists()
 if needs_data:
-    st.warning("Synthetic dataset not found. Generating it now…")
+    st.warning("Training dataset not found. Generating the local synthetic fallback…")
 if needs_training:
     st.warning("Model artifacts not found. Training both candidate models now…")
 
@@ -53,7 +53,7 @@ with left:
 
         1. **Validate** a synthetic transaction and reject malformed or sensitive input.
         2. **Engineer features** such as amount deviation and unusual-hour indicators.
-        3. **Score risk** with the selected ML model and transparent prototype rules.
+        3. **Score risk** with an ML likelihood estimate and transparent prototype rules.
         4. **Recommend action** using a bounded 0–100 combined score.
         5. **Monitor locally** by saving the result and creating a HIGH-risk alert.
 

@@ -1,0 +1,21 @@
+{
+  "manifest_version": 1,
+  "source_id": "ibm_tabformer_credit_card_transactions",
+  "source_name": "IBM TabFormer fully synthetic credit-card transactions",
+  "source_url": "https://github.com/IBM/TabFormer",
+  "download_url": "https://www.kaggle.com/api/v1/datasets/download/ealtman2019/credit-card-transactions",
+  "upstream_license": "Apache-2.0",
+  "data_origin": "fully_synthetic_ibm_tabformer",
+  "source_rows": 24386900,
+  "eligible_positive_purchase_rows": 23122004,
+  "excluded_non_positive_rows": 1264896,
+  "sample_rows": 500000,
+  "target_rows": 500000,
+  "sampling_seed": 42,
+  "sampling_strategy": "deterministic_uniform_label_independent_bottom_k",
+  "sampling_uses_target": false,
+  "historical_feature_policy": "Features use only the current positive payment and strictly prior positive payments for the same synthetic user; the current fraud label and future events are never used.",
+  "amount_filter": "Source rows with Amount <= 0 are excluded as refunds, credits, or zero-value events before history calculation and sampling.",
+  "amount_normalization": "Positive source USD values multiplied by fixed 83 for INR UI compatibility; this is not a live exchange rate.",
+  "dataset_sha256": "ef5bf3b41713d9fcc6f0a01145f8e0f902a846e20ba655585ea06d366b3925a7"
+}

@@ -11,6 +11,7 @@ import pandas as pd
 from config import (
     ALLOWED_DEVICE_TYPES,
     ALLOWED_PAYMENT_METHODS,
+    MODEL_RAW_FEATURES,
     RAW_FEATURES,
     REQUIRED_DATASET_COLUMNS,
 )
@@ -179,3 +180,28 @@ def validate_training_dataset(
             or dataframe[identifier].astype(str).str.strip().eq("").any()
         ):
             raise ValueError(f"{identifier} cannot contain missing or blank values.")
+
+    numeric_features: dict[str, pd.Series] = {}
+    for feature in MODEL_RAW_FEATURES:
+        numeric = pd.to_numeric(dataframe[feature], errors="coerce")
+        if numeric.isna().any() or not numeric.map(math.isfinite).all():
+            raise ValueError(f"{feature} must contain only finite numeric values.")
+        numeric_features[feature] = numeric
+
+    for feature in ("amount", "avg_user_transaction_amount"):
+        if (numeric_features[feature] <= 0).any():
+            raise ValueError(f"{feature} must be greater than 0.")
+    for feature in (
+        "previous_failed_txns",
+        "txn_count_10min",
+        "account_age_days",
+    ):
+        values = numeric_features[feature]
+        if (values < 0).any() or not (values % 1 == 0).all():
+            raise ValueError(f"{feature} must contain non-negative whole numbers.")
+    hours = numeric_features["hour_of_day"]
+    if not hours.between(0, 23).all() or not (hours % 1 == 0).all():
+        raise ValueError("hour_of_day must be a whole number between 0 and 23.")
+    for feature in ("location_change", "is_weekend", "international_transaction"):
+        if not numeric_features[feature].isin((0, 1)).all():
+            raise ValueError(f"{feature} must contain only 0 or 1.")

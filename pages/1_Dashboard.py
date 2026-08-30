@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from config import HIGH_RISK_THRESHOLD
 from src.database import get_alerts, get_dashboard_summary, get_transactions
 from src.ui_helpers import RISK_COLORS, configure_page, ensure_app_ready, render_header
 
@@ -127,7 +128,7 @@ alerts = get_alerts(limit=10)
 if alerts.empty:
     st.success(
         "No HIGH-risk review alerts are stored. Alerts appear only when a saved "
-        "combined score reaches 70 or above."
+        f"combined score reaches {HIGH_RISK_THRESHOLD:g} or above."
     )
 else:
     alert_display = alerts[

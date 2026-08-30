@@ -42,7 +42,33 @@ top_columns = st.columns(4)
 top_columns[0].metric("Model", selected_name.replace("_", " ").title())
 top_columns[1].metric("Dataset Size", f"{metadata['dataset_size']:,}")
 top_columns[2].metric("Fraud Rate", f"{metadata['fraud_rate'] * 100:.2f}%")
-top_columns[3].metric("Training Time", metadata["training_timestamp"][:10])
+top_columns[3].metric("Training Date (UTC)", metadata["training_timestamp"][:10])
+st.caption(
+    f"Data source: {metadata['dataset_source']} · "
+    f"Origin: {metadata['data_origin'].replace('_', ' ')} · "
+    f"Split: {metadata['split_strategy'].replace('_', ' ')} · "
+    f"ML features: {len(metadata['feature_list'])}"
+)
+
+with st.expander("Data provenance and leakage controls"):
+    st.markdown(
+        f"""
+        - **Upstream source:** [{metadata["dataset_source"]}]({metadata["dataset_source_url"]})
+        - **Source population:** {metadata["source_dataset_rows"]:,} fully synthetic events;
+          the prepared model sample contains {metadata["dataset_size"]:,} rows.
+        - **Sampling:** {metadata["source_sampling_strategy"].replace("_", " ")};
+          the fraud target was not used to select rows.
+        - **Amount handling:** {metadata["amount_normalization"]}
+        - **Outer evaluation:** earliest {metadata["training_rows"]:,} rows for training,
+          latest {metadata["test_rows"]:,} rows for locked chronological testing.
+        - **Feature boundary:** IDs, timestamp, target, and manual-only inputs never enter
+          either classifier. Historical aggregates are calculated from earlier events only.
+
+        The source is fully synthetic—not real or anonymized customer data. TabFormer is
+        the dataset source; this project trains Logistic Regression and Random Forest,
+        not the TabFormer transformer architecture.
+        """
+    )
 
 st.markdown("#### Fraud-focused evaluation metrics")
 metric_columns = st.columns(4)
@@ -77,7 +103,13 @@ st.warning(
 st.info(
     f"Hyperparameters and the winning model were selected with "
     f"{metadata['cv_folds']}-fold cross-validation on training rows only. The final "
-    "metrics below come from the untouched test partition."
+    f"metrics below come from the untouched {metadata['test_rows']:,}-row test "
+    "partition."
+)
+st.info(
+    "The saved class-weighted classifier's `predict_proba()` output is presented as "
+    "an uncalibrated fraud-likelihood estimate. It supports relative ranking and the "
+    "prototype risk score, but should not be interpreted as a real-world fraud rate."
 )
 
 with st.expander("What do these metrics mean?"):
@@ -86,7 +118,7 @@ with st.expander("What do these metrics mean?"):
         - **Precision:** among transactions predicted as fraud, the fraction actually fraudulent.
         - **Recall:** among all fraudulent transactions, the fraction detected by the model.
         - **F1-score:** harmonic balance between precision and recall.
-        - **ROC-AUC:** how well fraud probabilities rank fraud above genuine cases across thresholds.
+        - **ROC-AUC:** how well model likelihood scores rank fraud above genuine cases across thresholds.
         - **False Positive Rate:** genuine transactions incorrectly flagged.
         - **False Negative Rate:** fraud transactions incorrectly treated as genuine.
 
@@ -192,7 +224,11 @@ st.caption(
 )
 
 with st.expander("Training dataset visual checks"):
-    data = pd.read_csv(DATA_PATH)
+    available_columns = pd.read_csv(DATA_PATH, nrows=0).columns
+    visual_columns = ["fraud", "amount", "hour_of_day"]
+    if "payment_method" in available_columns:
+        visual_columns.append("payment_method")
+    data = pd.read_csv(DATA_PATH, usecols=visual_columns)
     col1, col2 = st.columns(2)
     with col1:
         label_counts = (
@@ -210,26 +246,37 @@ with st.expander("Training dataset visual checks"):
             width="stretch",
         )
     with col2:
-        rates = data.groupby("payment_method", as_index=False)["fraud"].mean()
+        if "payment_method" in data and data["payment_method"].nunique() > 1:
+            group_column = "payment_method"
+            chart_title = "Fraud rate by payment method"
+            axis_label = "Payment method"
+        else:
+            group_column = "hour_of_day"
+            chart_title = "Fraud rate by transaction hour"
+            axis_label = "Hour of day"
+        rates = data.groupby(group_column, as_index=False)["fraud"].mean()
         rates["fraud_rate_percent"] = rates["fraud"] * 100
         st.plotly_chart(
             px.bar(
                 rates,
-                x="payment_method",
+                x=group_column,
                 y="fraud_rate_percent",
-                title="Fraud rate by payment method",
+                title=chart_title,
                 labels={
-                    "payment_method": "Payment method",
+                    group_column: axis_label,
                     "fraud_rate_percent": "Fraud rate (%)",
                 },
             ),
             width="stretch",
         )
+    histogram_data = (
+        data.sample(n=100_000, random_state=42) if len(data) > 100_000 else data
+    )
     st.plotly_chart(
         px.histogram(
-            data,
+            histogram_data,
             x="amount",
-            color=data["fraud"].map({0: "Genuine", 1: "Fraud"}),
+            color=histogram_data["fraud"].map({0: "Genuine", 1: "Fraud"}),
             nbins=60,
             title="Transaction amount distribution",
             labels={"color": "Class", "amount": "Amount (₹)"},

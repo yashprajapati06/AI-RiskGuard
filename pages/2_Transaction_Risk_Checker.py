@@ -9,6 +9,8 @@ import streamlit as st
 from config import (
     ALLOWED_DEVICE_TYPES,
     ALLOWED_PAYMENT_METHODS,
+    HIGH_RISK_THRESHOLD,
+    LOW_RISK_THRESHOLD,
     ML_WEIGHT,
     RULE_WEIGHT,
     SAMPLE_TRANSACTIONS_PATH,
@@ -28,7 +30,7 @@ configure_page("Transaction Risk Checker", "🔎")
 ensure_app_ready()
 render_header(
     "🔎 Transaction Risk Checker",
-    "Analyze a safe synthetic payment event with the saved ML model and explainable rules.",
+    "Analyze safe demonstration inputs with the saved ML model and explainable rules.",
 )
 
 
@@ -40,16 +42,19 @@ def clear_previous_result() -> None:
 with st.expander("How the final risk score is calculated"):
     st.markdown(
         f"""
-        The model returns a fraud probability, which becomes the **ML risk score**.
-        Transparent educational rules produce a separate **rule risk score**.
+        The class-weighted model returns an **uncalibrated fraud-likelihood estimate**
+        from `predict_proba()`. It becomes the **ML risk score**. Transparent
+        educational rules produce a separate **rule risk score**.
 
         `Final score = ({ML_WEIGHT:.0%} × ML score) + ({RULE_WEIGHT:.0%} × rule score)`
 
-        - **LOW:** below 35 — normal monitoring recommendation
-        - **MEDIUM:** 35 to below 70 — additional verification or review
-        - **HIGH:** 70 or above — immediate manual review recommendation
+        - **LOW:** below {LOW_RISK_THRESHOLD:g} — normal monitoring recommendation
+        - **MEDIUM:** {LOW_RISK_THRESHOLD:g} to below {HIGH_RISK_THRESHOLD:g} — additional verification or review
+        - **HIGH:** {HIGH_RISK_THRESHOLD:g} or above — immediate manual review recommendation
 
         This score supports a demonstration workflow; it never authorizes or blocks a payment.
+        The likelihood estimate is useful for relative risk ranking, but it is not a
+        measured fraud rate or a production-calibrated probability.
         """
     )
 
@@ -73,6 +78,12 @@ preset_name = st.selectbox(
 )
 preset = samples[preset_name]
 
+st.caption(
+    "Model inputs: nine source-supported raw fields plus five derived signals. "
+    "New Device and Merchant Risk affect rules only. Payment Method and Device "
+    "Type are saved as demonstration context and do not change the ML estimate."
+)
+
 with st.form("risk_checker_form", clear_on_submit=False):
     st.markdown("#### Transaction details")
     col1, col2, col3 = st.columns(3)
@@ -89,17 +100,20 @@ with st.form("risk_checker_form", clear_on_submit=False):
             ALLOWED_PAYMENT_METHODS,
             index=ALLOWED_PAYMENT_METHODS.index(preset["payment_method"]),
             key=f"payment_method_{preset_name}",
+            help="Context/storage field only; excluded from the IBM-derived ML model.",
         )
         device_type = st.selectbox(
             "Device Type",
             ALLOWED_DEVICE_TYPES,
             index=ALLOWED_DEVICE_TYPES.index(preset["device_type"]),
             key=f"device_type_{preset_name}",
+            help="Context/storage field only; the source has no device-type feature.",
         )
         is_new_device = st.checkbox(
             "New Device",
             value=bool(preset["is_new_device"]),
             key=f"new_device_{preset_name}",
+            help="Manual rule-only input; the source dataset has no device identifier.",
         )
         previous_failed_txns = st.number_input(
             "Previous Failed Transactions",
@@ -136,7 +150,10 @@ with st.form("risk_checker_form", clear_on_submit=False):
             float(preset["merchant_risk_score"]),
             0.01,
             key=f"merchant_risk_{preset_name}",
-            help="Educational synthetic indicator from 0 (lower risk) to 1 (higher risk).",
+            help=(
+                "Manual rule-only indicator from 0 (lower risk) to 1 (higher risk). "
+                "It is never derived from fraud labels and does not enter the ML model."
+            ),
         )
     with col3:
         account_age_days = st.number_input(
@@ -211,7 +228,9 @@ if result:
     render_risk_status(analysis["risk_level"], analysis["recommended_action"])
     metrics = st.columns(4)
     metrics[0].metric(
-        "Fraud Probability", f"{analysis['fraud_probability'] * 100:.2f}%"
+        "ML Fraud-Likelihood Estimate",
+        f"{analysis['fraud_probability'] * 100:.2f}%",
+        help="Uncalibrated class-weighted predict_proba estimate; not an observed fraud rate.",
     )
     metrics[1].metric("ML Risk Score", f"{analysis['ml_risk_score']:.2f} / 100")
     metrics[2].metric("Rule Risk Score", f"{analysis['rule_risk_score']:.2f} / 100")
@@ -234,7 +253,7 @@ if result:
     else:
         st.success(
             "No prototype rules were triggered. The ML model may still assign a "
-            "non-zero probability because it evaluates the full feature pattern."
+            "non-zero likelihood estimate because it evaluates the full feature pattern."
         )
     st.caption(
         "Triggered factors explain the rule component. They are not a causal or exact "

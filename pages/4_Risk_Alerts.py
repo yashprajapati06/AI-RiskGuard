@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from config import HIGH_RISK_THRESHOLD
 from src.database import get_alerts
 from src.ui_helpers import configure_page, ensure_app_ready, render_header
 
@@ -18,7 +19,8 @@ alerts = get_alerts()
 if alerts.empty:
     st.success("No HIGH-risk manual-review recommendations are currently stored.")
     st.caption(
-        "An alert is created only after a saved analysis reaches 70 or above. Use "
+        f"An alert is created only after a saved analysis reaches "
+        f"{HIGH_RISK_THRESHOLD:g} or above. Use "
         "the High demonstration preset to show this workflow during evaluation."
     )
     st.stop()

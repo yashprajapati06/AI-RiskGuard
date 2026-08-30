@@ -21,9 +21,13 @@ LOGGER = logging.getLogger(__name__)
 
 @lru_cache(maxsize=1)
 def load_model_artifacts() -> tuple[Any, Any]:
-    """Load persisted artifacts, training them once if they do not exist."""
-    if not MODEL_PATH.exists() or not PREPROCESSOR_PATH.exists():
-        LOGGER.warning("Model artifacts are missing; starting local training.")
+    """Load compatible persisted artifacts, retraining once when required."""
+    from src.bootstrap import model_artifacts_are_valid
+
+    if not model_artifacts_are_valid():
+        LOGGER.warning(
+            "Model artifacts are missing or incompatible; starting training."
+        )
         from src.train_model import train_and_save_models
 
         train_and_save_models()

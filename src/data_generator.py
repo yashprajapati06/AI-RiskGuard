@@ -13,11 +13,12 @@ from config import (
     ALLOWED_PAYMENT_METHODS,
     BASE_DIR,
     DATA_PATH,
+    DATASET_METADATA_PATH,
     DATASET_SIZE,
     RANDOM_STATE,
     ensure_directories,
 )
-from src.utils import configure_logging
+from src.utils import configure_logging, write_json
 
 LOGGER = logging.getLogger(__name__)
 
@@ -151,6 +152,20 @@ def generate_synthetic_transactions(
         }
     )
     dataframe.to_csv(output_path, index=False)
+    if output_path.resolve() == DATA_PATH.resolve():
+        write_json(
+            DATASET_METADATA_PATH,
+            {
+                "source_id": "local_synthetic_generator",
+                "source_name": "Locally generated synthetic payment transactions",
+                "source_url": "local:src.data_generator",
+                "data_origin": "locally_generated_synthetic_fallback",
+                "source_rows": len(dataframe),
+                "sample_rows": len(dataframe),
+                "sampling_strategy": "complete_generated_dataset",
+                "amount_normalization": "No external currency conversion.",
+            },
+        )
     distribution = dataframe["fraud"].value_counts().sort_index().to_dict()
     fraud_rate = dataframe["fraud"].mean() * 100
     LOGGER.info(

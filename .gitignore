@@ -13,3 +13,15 @@ htmlcov/
 .DS_Store
 Thumbs.db
 *.log
+
+# Large upstream TabFormer archives and extracted raw source files.
+/data/raw/
+/data/downloads/
+/data/*.zip
+/data/*.tgz
+/data/*.tar
+/data/*.tar.gz
+/data/credit_card_transactions-ibm_v2.csv
+/data/sd254_cards.csv
+/credit-card-transactions.zip
+/transactions.tgz

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, make_scorer, precision_score, recall_score
@@ -16,13 +18,18 @@ from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_sp
 from sklearn.pipeline import Pipeline
 
 from config import (
+    ARTIFACT_SCHEMA_VERSION,
     BASE_DIR,
+    CV_TUNING_MAX_ROWS,
     DATA_PATH,
+    DATASET_METADATA_PATH,
+    EVENT_TIMESTAMP_COLUMN,
     MODEL_FEATURES,
     MODEL_METADATA_PATH,
     MODEL_PATH,
     MODEL_SELECTION_WEIGHTS,
     MODELS_DIR,
+    NON_MODEL_INPUT_FEATURES,
     PREPROCESSOR_PATH,
     RANDOM_STATE,
     TEST_SIZE,
@@ -36,13 +43,13 @@ from src.evaluation import (
 )
 from src.feature_engineering import engineer_features
 from src.preprocessing import build_preprocessor
-from src.utils import configure_logging, write_json
+from src.utils import configure_logging, read_json, write_json
 from src.validation import validate_training_dataset
 
 LOGGER = logging.getLogger(__name__)
 
 CV_FOLDS = 5
-MAX_CV_FALSE_POSITIVE_RATE = 0.20
+MAX_CV_FALSE_POSITIVE_RATE = 0.05
 
 CV_SCORING = {
     "precision": make_scorer(precision_score, zero_division=0),
@@ -61,6 +68,15 @@ def _project_relative(path: Any) -> str:
         return path.name
 
 
+def _file_sha256(path: Any) -> str:
+    """Return a streaming SHA-256 digest for dataset-manifest verification."""
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def _build_models() -> dict[str, Any]:
     return {
         "logistic_regression": LogisticRegression(
@@ -68,31 +84,42 @@ def _build_models() -> dict[str, Any]:
             random_state=RANDOM_STATE,
         ),
         "random_forest": RandomForestClassifier(
-            n_estimators=320,
+            # Keep the persisted demonstration artifact deployable on GitHub and
+            # Streamlit Community Cloud while retaining a meaningful ensemble.
+            n_estimators=120,
             random_state=RANDOM_STATE,
             n_jobs=1,
         ),
     }
 
 
-def _parameter_grids() -> dict[str, dict[str, list[Any]]]:
-    """Return bounded grids selected for the existing two candidate models."""
-    logistic_weights = [{0: 1, 1: ratio} for ratio in range(9, 17)]
-    forest_weights: list[Any] = [
-        "balanced_subsample",
-        {0: 1, 1: 15},
-        {0: 1, 1: 25},
+def _parameter_grids(target: pd.Series) -> dict[str, dict[str, list[Any]]]:
+    """Return bounded class weights scaled to the training-only imbalance."""
+    counts = target.value_counts()
+    if not {0, 1}.issubset(counts.index):
+        raise ValueError("Class-weight tuning requires both target classes.")
+    imbalance_ratio = float(counts[0] / counts[1])
+    numeric_ratios = {9, 16}
+    numeric_ratios.update(
+        max(2, round(imbalance_ratio * multiplier)) for multiplier in (0.125, 0.25, 0.5)
+    )
+    flattened_ratios = sorted(numeric_ratios)
+    logistic_weights: list[Any] = ["balanced"] + [
+        {0: 1, 1: ratio} for ratio in flattened_ratios
+    ]
+    forest_weights: list[Any] = ["balanced_subsample"] + [
+        {0: 1, 1: ratio} for ratio in flattened_ratios
     ]
     return {
         "logistic_regression": {
-            "classifier__C": [0.03, 0.1, 0.3, 1.0, 3.0],
+            "classifier__C": [0.03, 0.1, 0.3, 1.0],
             "classifier__class_weight": logistic_weights,
-            "classifier__solver": ["liblinear", "lbfgs"],
+            "classifier__solver": ["liblinear"],
         },
         "random_forest": {
             "classifier__class_weight": forest_weights,
-            "classifier__max_depth": [8, 14, None],
-            "classifier__min_samples_leaf": [2, 5, 10],
+            "classifier__max_depth": [8, 12],
+            "classifier__min_samples_leaf": [5, 20],
         },
     }
 
@@ -149,6 +176,135 @@ def _clean_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def split_training_dataset(
+    dataframe: pd.DataFrame,
+) -> tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.Series,
+    pd.Series,
+    dict[str, Any],
+]:
+    """Engineer features and create the locked outer 80/20 partition.
+
+    External transaction data is evaluated chronologically when an event timestamp
+    is present. The fallback generated dataset has no timestamp and therefore keeps
+    the original reproducible stratified split.
+    """
+    engineered = engineer_features(dataframe)
+    features = engineered[MODEL_FEATURES]
+    target = engineered["fraud"].astype(int)
+
+    if EVENT_TIMESTAMP_COLUMN in engineered.columns:
+        timestamps = pd.to_datetime(
+            engineered[EVENT_TIMESTAMP_COLUMN], errors="coerce", utc=True
+        )
+        if timestamps.isna().any():
+            raise ValueError(f"{EVENT_TIMESTAMP_COLUMN} must contain valid timestamps.")
+        ordered_positions = np.argsort(timestamps.to_numpy(), kind="stable")
+        split_index = int(len(engineered) * (1.0 - TEST_SIZE))
+        if split_index <= 0 or split_index >= len(engineered):
+            raise ValueError("The chronological split produced an empty partition.")
+        training_positions = ordered_positions[:split_index]
+        test_positions = ordered_positions[split_index:]
+        x_train = features.iloc[training_positions]
+        x_test = features.iloc[test_positions]
+        y_train = target.iloc[training_positions]
+        y_test = target.iloc[test_positions]
+        train_times = timestamps.iloc[training_positions]
+        test_times = timestamps.iloc[test_positions]
+        split_metadata = {
+            "split_strategy": "chronological_80_20",
+            "training_period_start": train_times.min().isoformat(),
+            "training_period_end": train_times.max().isoformat(),
+            "test_period_start": test_times.min().isoformat(),
+            "test_period_end": test_times.max().isoformat(),
+        }
+    else:
+        x_train, x_test, y_train, y_test = train_test_split(
+            features,
+            target,
+            test_size=TEST_SIZE,
+            random_state=RANDOM_STATE,
+            stratify=target,
+        )
+        split_metadata = {"split_strategy": "stratified_random_80_20"}
+
+    for partition_name, partition_target in (
+        ("training", y_train),
+        ("test", y_test),
+    ):
+        if set(partition_target.unique().tolist()) != {0, 1}:
+            raise ValueError(
+                f"The {partition_name} partition must contain both target classes."
+            )
+    return engineered, x_train, x_test, y_train, y_test, split_metadata
+
+
+def _training_tuning_sample(
+    features: pd.DataFrame, target: pd.Series
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Return a bounded stratified sample drawn only from training rows."""
+    if len(features) <= CV_TUNING_MAX_ROWS:
+        return features, target
+    tuning_features, _, tuning_target, _ = train_test_split(
+        features,
+        target,
+        train_size=CV_TUNING_MAX_ROWS,
+        random_state=RANDOM_STATE,
+        stratify=target,
+    )
+    return tuning_features, tuning_target
+
+
+def _load_dataset_provenance(dataframe: pd.DataFrame) -> dict[str, Any]:
+    """Load explicit source provenance without inferring origin from columns."""
+    if not DATASET_METADATA_PATH.exists():
+        return {
+            "source_id": "unverified_local_dataset",
+            "source_name": "Local training dataset (source manifest unavailable)",
+            "source_url": "local:data.transactions",
+            "data_origin": "unverified_local_dataset",
+            "source_rows": len(dataframe),
+            "sample_rows": len(dataframe),
+            "sampling_strategy": "unknown",
+            "amount_normalization": "Unknown; source manifest unavailable.",
+        }
+    provenance = read_json(DATASET_METADATA_PATH)
+    required = {
+        "source_id",
+        "source_name",
+        "source_url",
+        "data_origin",
+        "source_rows",
+        "sample_rows",
+        "sampling_strategy",
+        "amount_normalization",
+    }
+    missing = required.difference(provenance)
+    if missing:
+        raise ValueError("Dataset metadata is missing: " + ", ".join(sorted(missing)))
+    if int(provenance["sample_rows"]) != len(dataframe):
+        raise ValueError(
+            "Dataset metadata sample_rows does not match the training CSV."
+        )
+    if int(provenance["source_rows"]) < len(dataframe):
+        raise ValueError(
+            "Dataset metadata source_rows cannot be smaller than sample_rows."
+        )
+    expected_digest = provenance.get("dataset_sha256")
+    if expected_digest is not None:
+        if not isinstance(expected_digest, str) or len(expected_digest) != 64:
+            raise ValueError("Dataset metadata contains an invalid SHA-256 digest.")
+        if _file_sha256(DATA_PATH) != expected_digest.casefold():
+            raise ValueError(
+                "Dataset hash does not match data/dataset_metadata.json. "
+                "Regenerate the processed dataset before training."
+            )
+    return provenance
+
+
 def train_and_save_models() -> dict[str, Any]:
     """Tune, train, compare, and persist candidates without test-set leakage.
 
@@ -160,29 +316,36 @@ def train_and_save_models() -> dict[str, Any]:
     ensure_directories()
     dataframe = load_or_generate_dataset(DATA_PATH)
     validate_training_dataset(dataframe)
-    engineered = engineer_features(dataframe)
-
-    # MODEL_FEATURES is an explicit allow-list: IDs and the fraud target are never
-    # passed to either candidate model.
-    features = engineered[MODEL_FEATURES]
+    provenance = _load_dataset_provenance(dataframe)
+    (
+        engineered,
+        x_train,
+        x_test,
+        y_train,
+        y_test,
+        split_metadata,
+    ) = split_training_dataset(dataframe)
     target = engineered["fraud"].astype(int)
-    x_train, x_test, y_train, y_test = train_test_split(
-        features,
-        target,
-        test_size=TEST_SIZE,
-        random_state=RANDOM_STATE,
-        stratify=target,
-    )
+    tuning_features, tuning_target = _training_tuning_sample(x_train, y_train)
+
+    # MODEL_FEATURES is an explicit allow-list: identifiers, timestamps, rule-only
+    # inputs, and the fraud target are never passed to either classifier.
+    tuning_counts = tuning_target.value_counts()
+    if len(tuning_counts) < 2 or tuning_counts.min() < CV_FOLDS:
+        raise ValueError(
+            "The training-only tuning sample needs at least five rows from each "
+            "target class."
+        )
 
     models = _build_models()
-    parameter_grids = _parameter_grids()
+    parameter_grids = _parameter_grids(tuning_target)
     cross_validation = StratifiedKFold(
         n_splits=CV_FOLDS,
         shuffle=True,
         random_state=RANDOM_STATE,
     )
     evaluations: dict[str, dict[str, Any]] = {}
-    fitted_searches: dict[str, GridSearchCV] = {}
+    fitted_pipelines: dict[str, Pipeline] = {}
     for model_name, model in models.items():
         LOGGER.info("Tuning %s with %d-fold cross-validation", model_name, CV_FOLDS)
         pipeline = Pipeline(
@@ -201,13 +364,15 @@ def train_and_save_models() -> dict[str, Any]:
             error_score="raise",
             return_train_score=False,
         )
-        search.fit(x_train, y_train)
-        fitted_searches[model_name] = search
+        search.fit(tuning_features, tuning_target)
+        # GridSearchCV is intentionally bounded to a training-only sample for
+        # tractability. The chosen pipeline is then refitted on every training row.
+        fitted_pipeline = clone(pipeline).set_params(**search.best_params_)
+        fitted_pipeline.fit(x_train, y_train)
+        fitted_pipelines[model_name] = fitted_pipeline
 
         # Held-out metrics are calculated only after CV tuning has finished.
-        evaluations[model_name] = evaluate_classifier(
-            search.best_estimator_, x_test, y_test
-        )
+        evaluations[model_name] = evaluate_classifier(fitted_pipeline, x_test, y_test)
         evaluations[model_name]["selection_score"] = model_selection_score(
             evaluations[model_name]
         )
@@ -223,7 +388,7 @@ def train_and_save_models() -> dict[str, Any]:
     # Selection uses training-only CV results; the test metrics above cannot affect
     # which model is persisted.
     selected_name = max(
-        fitted_searches,
+        fitted_pipelines,
         key=lambda name: (
             evaluations[name]["cv_selection_score"],
             evaluations[name]["cv_metrics"]["roc_auc"],
@@ -231,23 +396,27 @@ def train_and_save_models() -> dict[str, Any]:
         ),
     )
     selected_metrics = evaluations[selected_name]
-    selected_pipeline = fitted_searches[selected_name].best_estimator_
+    selected_pipeline = fitted_pipelines[selected_name]
     preprocessor = selected_pipeline.named_steps["preprocessor"]
     selected_model = selected_pipeline.named_steps["classifier"]
     feature_names = preprocessor.get_feature_names_out()
     feature_importance = extract_feature_importance(selected_model, feature_names)
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    joblib.dump(selected_model, MODEL_PATH)
-    joblib.dump(preprocessor, PREPROCESSOR_PATH)
+    # Compression avoids unnecessarily large deployable artifacts without
+    # changing the fitted estimator or any reported metric.
+    joblib.dump(selected_model, MODEL_PATH, compress=3)
+    joblib.dump(preprocessor, PREPROCESSOR_PATH, compress=3)
 
     timestamp = datetime.now(timezone.utc).isoformat()
     metadata: dict[str, Any] = {
-        "model_version": "1.1.0",
+        "model_version": ARTIFACT_SCHEMA_VERSION,
         "selected_model": selected_name,
         "selection_reason": (
-            "Selected using five-fold training-only cross-validation. Candidates "
-            "must keep mean validation false-positive rate at or below 20%, then "
+            "Selected using five-fold cross-validation on a bounded sample drawn "
+            "only from the training partition, then refitted on all training rows. "
+            "Candidates must keep mean validation false-positive rate at or below "
+            f"{MAX_CV_FALSE_POSITIVE_RATE:.0%}, then "
             "maximize 35% recall, 35% F1, 20% ROC-AUC, and 10% precision. "
             "The held-out test set is used only for final reporting."
         ),
@@ -255,13 +424,34 @@ def train_and_save_models() -> dict[str, Any]:
         "dataset_size": len(engineered),
         "training_rows": len(x_train),
         "test_rows": len(x_test),
+        "tuning_rows": len(tuning_features),
         "fraud_rate": float(target.mean()),
         "random_state": RANDOM_STATE,
         "test_size": TEST_SIZE,
         "cv_folds": CV_FOLDS,
+        "cv_strategy": "stratified_shuffled_training_only_sample",
         "maximum_cv_false_positive_rate": MAX_CV_FALSE_POSITIVE_RATE,
         "selection_partition": "training_only_cross_validation",
+        "refit_rows": len(x_train),
+        **split_metadata,
+        "dataset_source_id": str(provenance["source_id"]),
+        "dataset_source": str(provenance["source_name"]),
+        "dataset_source_url": str(provenance["source_url"]),
+        "data_origin": str(provenance["data_origin"]),
+        "source_dataset_rows": int(provenance["source_rows"]),
+        "source_sampling_strategy": str(provenance["sampling_strategy"]),
+        "amount_normalization": str(provenance["amount_normalization"]),
+        "dataset_sha256": str(provenance.get("dataset_sha256", "not_recorded")),
+        "upstream_license": str(provenance.get("upstream_license", "not_recorded")),
+        "eligible_positive_purchase_rows": int(
+            provenance.get("eligible_positive_purchase_rows", len(engineered))
+        ),
+        "excluded_non_positive_rows": int(
+            provenance.get("excluded_non_positive_rows", 0)
+        ),
+        "amount_filter": str(provenance.get("amount_filter", "not_recorded")),
         "feature_list": MODEL_FEATURES,
+        "non_model_input_features": NON_MODEL_INPUT_FEATURES,
         "transformed_feature_count": len(feature_names),
         "models": evaluations,
         "selected_model_metrics": selected_metrics,

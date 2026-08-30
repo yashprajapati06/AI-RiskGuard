@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 import logging
 import math
+from datetime import datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from config import ARTIFACT_SCHEMA_VERSION
 
 
 def configure_logging() -> None:
@@ -75,15 +79,32 @@ def parse_json_list(value: Any) -> list[str]:
 def validate_model_metadata(metadata: dict[str, Any]) -> None:
     """Validate the persisted metadata structure used by monitoring pages."""
     required_top_level = {
+        "model_version",
         "selected_model",
+        "selection_reason",
         "training_timestamp",
         "dataset_size",
+        "dataset_source_id",
+        "dataset_source",
+        "dataset_source_url",
+        "data_origin",
+        "source_dataset_rows",
+        "source_sampling_strategy",
         "fraud_rate",
         "models",
         "feature_list",
+        "non_model_input_features",
         "cv_folds",
+        "cv_strategy",
         "maximum_cv_false_positive_rate",
         "selection_partition",
+        "split_strategy",
+        "training_rows",
+        "test_rows",
+        "tuning_rows",
+        "refit_rows",
+        "transformed_feature_count",
+        "amount_normalization",
     }
     missing = required_top_level.difference(metadata)
     if missing:
@@ -100,6 +121,15 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
         or not metadata["training_timestamp"]
     ):
         raise TypeError("Model metadata training_timestamp must be a non-empty string.")
+    if metadata["model_version"] != ARTIFACT_SCHEMA_VERSION:
+        raise ValueError(
+            "Model metadata version is incompatible with this application."
+        )
+    if (
+        not isinstance(metadata["selection_reason"], str)
+        or not metadata["selection_reason"].strip()
+    ):
+        raise TypeError("Model metadata selection_reason must be a non-empty string.")
     required_models = {"logistic_regression", "random_forest"}
     if not required_models.issubset(metadata["models"]):
         raise ValueError("Model metadata must contain both candidate model results.")
@@ -107,8 +137,52 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
         raise ValueError("Selected model is absent from model evaluation results.")
     if not isinstance(metadata["feature_list"], list) or not metadata["feature_list"]:
         raise TypeError("Model metadata feature_list must be a non-empty list.")
+    if not isinstance(metadata["non_model_input_features"], list):
+        raise TypeError("Model metadata non_model_input_features must be a list.")
+    for key in ("feature_list", "non_model_input_features"):
+        values = metadata[key]
+        if any(not isinstance(value, str) or not value.strip() for value in values):
+            raise TypeError(f"Model metadata {key} must contain non-empty strings.")
+        if len(values) != len(set(values)):
+            raise ValueError(f"Model metadata {key} must not contain duplicates.")
+    overlap = set(metadata["feature_list"]).intersection(
+        metadata["non_model_input_features"]
+    )
+    if overlap:
+        raise ValueError("Model and non-model feature lists must be disjoint.")
+    for key in (
+        "dataset_source_id",
+        "dataset_source",
+        "dataset_source_url",
+        "data_origin",
+        "source_sampling_strategy",
+        "amount_normalization",
+    ):
+        if not isinstance(metadata[key], str) or not metadata[key].strip():
+            raise TypeError(f"Model metadata {key} must be a non-empty string.")
     if int(metadata["dataset_size"]) <= 0:
         raise ValueError("Model metadata dataset_size must be positive.")
+    dataset_size = int(metadata["dataset_size"])
+    training_rows = int(metadata["training_rows"])
+    test_rows = int(metadata["test_rows"])
+    tuning_rows = int(metadata["tuning_rows"])
+    refit_rows = int(metadata["refit_rows"])
+    source_dataset_rows = int(metadata["source_dataset_rows"])
+    transformed_feature_count = int(metadata["transformed_feature_count"])
+    if training_rows + test_rows != dataset_size:
+        raise ValueError("Training and test row counts must equal dataset_size.")
+    if training_rows <= 0 or test_rows <= 0:
+        raise ValueError("Training and test row counts must both be positive.")
+    if not 0 < tuning_rows <= training_rows:
+        raise ValueError(
+            "tuning_rows must be positive and no larger than training_rows."
+        )
+    if refit_rows != training_rows:
+        raise ValueError("refit_rows must equal training_rows.")
+    if source_dataset_rows < dataset_size:
+        raise ValueError("source_dataset_rows cannot be smaller than dataset_size.")
+    if transformed_feature_count <= 0:
+        raise ValueError("transformed_feature_count must be positive.")
     fraud_rate = float(metadata["fraud_rate"])
     if not math.isfinite(fraud_rate) or not 0 <= fraud_rate <= 1:
         raise ValueError("Model metadata fraud_rate must be between 0 and 1.")
@@ -121,6 +195,42 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
         )
     if metadata["selection_partition"] != "training_only_cross_validation":
         raise ValueError("Model selection must use training-only cross-validation.")
+    if metadata["cv_strategy"] not in {
+        "stratified_shuffled_training_only_sample",
+        "time_series_expanding_training_only_sample",
+    }:
+        raise ValueError("Model metadata contains an unsupported CV strategy.")
+    if metadata["split_strategy"] not in {
+        "chronological_80_20",
+        "stratified_random_80_20",
+    }:
+        raise ValueError("Model metadata contains an unsupported split strategy.")
+    if metadata["split_strategy"] == "chronological_80_20":
+        period_keys = (
+            "training_period_start",
+            "training_period_end",
+            "test_period_start",
+            "test_period_end",
+        )
+        missing_periods = [key for key in period_keys if key not in metadata]
+        if missing_periods:
+            raise ValueError(
+                "Chronological metadata is missing: " + ", ".join(missing_periods)
+            )
+        try:
+            periods = [
+                datetime.fromisoformat(str(metadata[key]).replace("Z", "+00:00"))
+                for key in period_keys
+            ]
+            periods_are_ordered = all(
+                earlier <= later for earlier, later in pairwise(periods)
+            )
+        except (TypeError, ValueError):
+            periods_are_ordered = False
+        if not periods_are_ordered:
+            raise ValueError(
+                "Chronological metadata periods must be valid and ordered."
+            )
 
     required_metrics = {
         "accuracy",
@@ -135,12 +245,24 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
         "cv_selection_score",
         "cv_metrics",
         "best_parameters",
+        "tn",
+        "fp",
+        "fn",
+        "tp",
     }
     for model_name, metrics in metadata["models"].items():
         if not isinstance(metrics, dict) or not required_metrics.issubset(metrics):
             raise ValueError(f"Metrics are incomplete for {model_name}.")
         scalar_metrics = required_metrics.difference(
-            {"confusion_matrix", "cv_metrics", "best_parameters"}
+            {
+                "confusion_matrix",
+                "cv_metrics",
+                "best_parameters",
+                "tn",
+                "fp",
+                "fn",
+                "tp",
+            }
         )
         for metric_name in scalar_metrics:
             value = float(metrics[metric_name])
@@ -153,6 +275,51 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
             or any(not isinstance(row, list) or len(row) != 2 for row in matrix)
         ):
             raise ValueError(f"{model_name}.confusion_matrix must be a 2x2 list.")
+        flat_matrix = [value for row in matrix for value in row]
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in flat_matrix
+        ):
+            raise ValueError(
+                f"{model_name}.confusion_matrix must contain non-negative integers."
+            )
+        if sum(flat_matrix) != test_rows:
+            raise ValueError(f"{model_name}.confusion_matrix must sum to test_rows.")
+        tn, fp, fn, tp = flat_matrix
+        expected_counts = {"tn": tn, "fp": fp, "fn": fn, "tp": tp}
+        if any(
+            isinstance(metrics[key], bool)
+            or not isinstance(metrics[key], int)
+            or metrics[key] < 0
+            for key in expected_counts
+        ):
+            raise ValueError(
+                f"{model_name} named confusion counts must be non-negative integers."
+            )
+        if any(metrics[key] != value for key, value in expected_counts.items()):
+            raise ValueError(
+                f"{model_name} named confusion counts do not match the matrix."
+            )
+        expected_fpr = fp / (fp + tn) if fp + tn else 0.0
+        expected_fnr = fn / (fn + tp) if fn + tp else 0.0
+        if not math.isclose(
+            float(metrics["false_positive_rate"]),
+            expected_fpr,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            raise ValueError(
+                f"{model_name}.false_positive_rate is inconsistent with the matrix."
+            )
+        if not math.isclose(
+            float(metrics["false_negative_rate"]),
+            expected_fnr,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            raise ValueError(
+                f"{model_name}.false_negative_rate is inconsistent with the matrix."
+            )
         cv_metrics = metrics["cv_metrics"]
         if not isinstance(cv_metrics, dict):
             raise TypeError(f"{model_name}.cv_metrics must be an object.")
@@ -173,12 +340,10 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
                 raise ValueError(
                     f"{model_name}.cv_metrics.{metric_name} must be between 0 and 1."
                 )
-        if (
-            float(cv_metrics["false_positive_rate"])
-            > maximum_cv_fpr + 1e-12
-        ):
+        if float(cv_metrics["false_positive_rate"]) > maximum_cv_fpr + 1e-12:
             raise ValueError(f"{model_name} exceeds the cross-validation FPR limit.")
-        if not isinstance(metrics["best_parameters"], dict) or not metrics[
-            "best_parameters"
-        ]:
+        if (
+            not isinstance(metrics["best_parameters"], dict)
+            or not metrics["best_parameters"]
+        ):
             raise TypeError(f"{model_name}.best_parameters must be a non-empty object.")

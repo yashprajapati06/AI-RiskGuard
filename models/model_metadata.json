@@ -1,27 +1,43 @@
 {
-  "model_version": "1.1.0",
+  "model_version": "2.0.0",
   "selected_model": "logistic_regression",
-  "selection_reason": "Selected using five-fold training-only cross-validation. Candidates must keep mean validation false-positive rate at or below 20%, then maximize 35% recall, 35% F1, 20% ROC-AUC, and 10% precision. The held-out test set is used only for final reporting.",
-  "training_timestamp": "2026-08-30T06:22:34.379291+00:00",
-  "dataset_size": 12000,
-  "training_rows": 9600,
-  "test_rows": 2400,
-  "fraud_rate": 0.05325,
+  "selection_reason": "Selected using five-fold cross-validation on a bounded sample drawn only from the training partition, then refitted on all training rows. Candidates must keep mean validation false-positive rate at or below 5%, then maximize 35% recall, 35% F1, 20% ROC-AUC, and 10% precision. The held-out test set is used only for final reporting.",
+  "training_timestamp": "2026-08-30T09:15:56.755098+00:00",
+  "dataset_size": 500000,
+  "training_rows": 400000,
+  "test_rows": 100000,
+  "tuning_rows": 60000,
+  "fraud_rate": 0.00127,
   "random_state": 42,
   "test_size": 0.2,
   "cv_folds": 5,
-  "maximum_cv_false_positive_rate": 0.2,
+  "cv_strategy": "stratified_shuffled_training_only_sample",
+  "maximum_cv_false_positive_rate": 0.05,
   "selection_partition": "training_only_cross_validation",
+  "refit_rows": 400000,
+  "split_strategy": "chronological_80_20",
+  "training_period_start": "1991-01-09T08:24:00+00:00",
+  "training_period_end": "2017-05-14T11:12:00+00:00",
+  "test_period_start": "2017-05-14T11:15:00+00:00",
+  "test_period_end": "2020-02-28T23:13:00+00:00",
+  "dataset_source_id": "ibm_tabformer_credit_card_transactions",
+  "dataset_source": "IBM TabFormer fully synthetic credit-card transactions",
+  "dataset_source_url": "https://github.com/IBM/TabFormer",
+  "data_origin": "fully_synthetic_ibm_tabformer",
+  "source_dataset_rows": 24386900,
+  "source_sampling_strategy": "deterministic_uniform_label_independent_bottom_k",
+  "amount_normalization": "Positive source USD values multiplied by fixed 83 for INR UI compatibility; this is not a live exchange rate.",
+  "dataset_sha256": "ef5bf3b41713d9fcc6f0a01145f8e0f902a846e20ba655585ea06d366b3925a7",
+  "upstream_license": "Apache-2.0",
+  "eligible_positive_purchase_rows": 23122004,
+  "excluded_non_positive_rows": 1264896,
+  "amount_filter": "Source rows with Amount <= 0 are excluded as refunds, credits, or zero-value events before history calculation and sampling.",
   "feature_list": [
     "amount",
-    "payment_method",
-    "device_type",
-    "is_new_device",
     "previous_failed_txns",
     "txn_count_10min",
     "avg_user_transaction_amount",
     "location_change",
-    "merchant_risk_score",
     "account_age_days",
     "hour_of_day",
     "is_weekend",
@@ -32,227 +48,197 @@
     "failed_attempt_risk",
     "unusual_hour"
   ],
-  "transformed_feature_count": 23,
+  "non_model_input_features": [
+    "payment_method",
+    "device_type",
+    "is_new_device",
+    "merchant_risk_score"
+  ],
+  "transformed_feature_count": 14,
   "models": {
     "logistic_regression": {
-      "accuracy": 0.7958333333333333,
-      "precision": 0.14922480620155038,
-      "recall": 0.6015625,
-      "f1": 0.2391304347826087,
-      "roc_auc": 0.7623033120598591,
-      "false_positive_rate": 0.1932218309859155,
-      "false_negative_rate": 0.3984375,
+      "accuracy": 0.97527,
+      "precision": 0.04155339805825243,
+      "recall": 0.9553571428571429,
+      "f1": 0.0796427242277633,
+      "roc_auc": 0.9732501294306767,
+      "false_positive_rate": 0.024707672593304503,
+      "false_negative_rate": 0.044642857142857144,
       "confusion_matrix": [
         [
-          1833,
-          439
+          97420,
+          2468
         ],
         [
-          51,
-          77
+          5,
+          107
         ]
       ],
-      "tn": 1833,
-      "fp": 439,
-      "fn": 51,
-      "tp": 77,
-      "selection_score": 0.4616256702060399,
+      "tn": 97420,
+      "fp": 2468,
+      "fn": 5,
+      "tp": 107,
+      "selection_score": 0.5610553191716777,
       "cv_metrics": {
-        "precision": 0.15629559302356494,
-        "recall": 0.6106034646868457,
-        "f1": 0.24853115606241954,
-        "roc_auc": 0.7776603529439885,
-        "specificity": 0.8129606521466677,
-        "false_positive_rate": 0.18703934785333232,
-        "selection_score": 0.471858747153397
+        "precision": 0.012459894561198432,
+        "recall": 0.29833333333333334,
+        "f1": 0.023904228740881335,
+        "roc_auc": 0.7794810506624603,
+        "specificity": 0.9703115125549127,
+        "false_positive_rate": 0.02968848744508734,
+        "selection_score": 0.26992534631458703
       },
-      "cv_selection_score": 0.471858747153397,
+      "cv_selection_score": 0.26992534631458703,
       "best_parameters": {
-        "C": 1.0,
+        "C": 0.03,
         "class_weight": {
           "0": 1,
-          "1": 15
+          "1": 192
         },
-        "solver": "lbfgs"
+        "solver": "liblinear"
       }
     },
     "random_forest": {
-      "accuracy": 0.7841666666666667,
-      "precision": 0.14154411764705882,
-      "recall": 0.6015625,
-      "f1": 0.22916666666666666,
-      "roc_auc": 0.7591913787411971,
-      "false_positive_rate": 0.2055457746478873,
-      "false_negative_rate": 0.3984375,
+      "accuracy": 0.95867,
+      "precision": 0.008555365436323637,
+      "recall": 0.3125,
+      "f1": 0.016654770402093743,
+      "roc_auc": 0.839188507199492,
+      "false_positive_rate": 0.040605478135511776,
+      "false_negative_rate": 0.6875,
       "confusion_matrix": [
         [
-          1805,
-          467
+          95832,
+          4056
         ],
         [
-          51,
-          77
+          77,
+          35
         ]
       ],
-      "tn": 1805,
-      "fp": 467,
-      "fn": 51,
-      "tp": 77,
-      "selection_score": 0.4567478958462786,
+      "tn": 95832,
+      "fp": 4056,
+      "fn": 77,
+      "tp": 35,
+      "selection_score": 0.2838974076242636,
       "cv_metrics": {
-        "precision": 0.1390530194024413,
-        "recall": 0.5714258518941557,
-        "f1": 0.2234564678022429,
-        "roc_auc": 0.7513110772306032,
-        "specificity": 0.8000877302920164,
-        "false_positive_rate": 0.1999122697079836,
-        "selection_score": 0.4423763292801043
+        "precision": 0.010601960549804678,
+        "recall": 0.29416666666666663,
+        "f1": 0.020450331956425077,
+        "roc_auc": 0.7867898337924352,
+        "specificity": 0.9628685431221603,
+        "false_positive_rate": 0.0371314568778397,
+        "selection_score": 0.2685341123315496
       },
-      "cv_selection_score": 0.4423763292801043,
+      "cv_selection_score": 0.2685341123315496,
       "best_parameters": {
         "class_weight": {
           "0": 1,
-          "1": 25
+          "1": 384
         },
-        "max_depth": 14,
-        "min_samples_leaf": 10
+        "max_depth": 8,
+        "min_samples_leaf": 20
       }
     }
   },
   "selected_model_metrics": {
-    "accuracy": 0.7958333333333333,
-    "precision": 0.14922480620155038,
-    "recall": 0.6015625,
-    "f1": 0.2391304347826087,
-    "roc_auc": 0.7623033120598591,
-    "false_positive_rate": 0.1932218309859155,
-    "false_negative_rate": 0.3984375,
+    "accuracy": 0.97527,
+    "precision": 0.04155339805825243,
+    "recall": 0.9553571428571429,
+    "f1": 0.0796427242277633,
+    "roc_auc": 0.9732501294306767,
+    "false_positive_rate": 0.024707672593304503,
+    "false_negative_rate": 0.044642857142857144,
     "confusion_matrix": [
       [
-        1833,
-        439
+        97420,
+        2468
       ],
       [
-        51,
-        77
+        5,
+        107
       ]
     ],
-    "tn": 1833,
-    "fp": 439,
-    "fn": 51,
-    "tp": 77,
-    "selection_score": 0.4616256702060399,
+    "tn": 97420,
+    "fp": 2468,
+    "fn": 5,
+    "tp": 107,
+    "selection_score": 0.5610553191716777,
     "cv_metrics": {
-      "precision": 0.15629559302356494,
-      "recall": 0.6106034646868457,
-      "f1": 0.24853115606241954,
-      "roc_auc": 0.7776603529439885,
-      "specificity": 0.8129606521466677,
-      "false_positive_rate": 0.18703934785333232,
-      "selection_score": 0.471858747153397
+      "precision": 0.012459894561198432,
+      "recall": 0.29833333333333334,
+      "f1": 0.023904228740881335,
+      "roc_auc": 0.7794810506624603,
+      "specificity": 0.9703115125549127,
+      "false_positive_rate": 0.02968848744508734,
+      "selection_score": 0.26992534631458703
     },
-    "cv_selection_score": 0.471858747153397,
+    "cv_selection_score": 0.26992534631458703,
     "best_parameters": {
-      "C": 1.0,
+      "C": 0.03,
       "class_weight": {
         "0": 1,
-        "1": 15
+        "1": 192
       },
-      "solver": "lbfgs"
+      "solver": "liblinear"
     }
   },
   "global_feature_importance": [
     {
-      "feature": "numeric__txn_count_10min",
-      "importance": 0.4697690763687832
-    },
-    {
       "feature": "numeric__amount_ratio",
-      "importance": 0.4221641321241753
-    },
-    {
-      "feature": "numeric__merchant_risk_score",
-      "importance": 0.4219217614778909
-    },
-    {
-      "feature": "numeric__previous_failed_txns",
-      "importance": 0.40029473044657715
-    },
-    {
-      "feature": "numeric__is_new_device",
-      "importance": 0.30236380155732434
-    },
-    {
-      "feature": "numeric__location_change",
-      "importance": 0.28754990406987896
-    },
-    {
-      "feature": "numeric__unusual_hour",
-      "importance": 0.24809847595781728
-    },
-    {
-      "feature": "numeric__international_transaction",
-      "importance": 0.2383206445455162
-    },
-    {
-      "feature": "categorical__device_type_iOS",
-      "importance": 0.17263039618098663
-    },
-    {
-      "feature": "categorical__payment_method_Card",
-      "importance": 0.16977296595901067
-    },
-    {
-      "feature": "categorical__device_type_Web",
-      "importance": 0.16248150983826587
-    },
-    {
-      "feature": "categorical__payment_method_NetBanking",
-      "importance": 0.10657121166851521
-    },
-    {
-      "feature": "categorical__device_type_Android",
-      "importance": 0.08580865493797335
-    },
-    {
-      "feature": "numeric__account_age_days",
-      "importance": 0.0823573297928544
-    },
-    {
-      "feature": "categorical__payment_method_UPI",
-      "importance": 0.07815318213145266
-    },
-    {
-      "feature": "categorical__payment_method_Wallet",
-      "importance": 0.06642320119824256
-    },
-    {
-      "feature": "numeric__amount",
-      "importance": 0.060156735796139914
-    },
-    {
-      "feature": "numeric__avg_user_transaction_amount",
-      "importance": 0.03578149930974213
-    },
-    {
-      "feature": "numeric__is_high_velocity",
-      "importance": 0.03348138710015788
-    },
-    {
-      "feature": "numeric__is_high_amount",
-      "importance": 0.02512309240982034
+      "importance": 0.7560298980583658
     },
     {
       "feature": "numeric__hour_of_day",
-      "importance": 0.018597822525211992
+      "importance": 0.3716500571211216
+    },
+    {
+      "feature": "numeric__unusual_hour",
+      "importance": 0.21610378042758563
+    },
+    {
+      "feature": "numeric__avg_user_transaction_amount",
+      "importance": 0.21113598781236045
+    },
+    {
+      "feature": "numeric__international_transaction",
+      "importance": 0.20848817861899913
+    },
+    {
+      "feature": "numeric__txn_count_10min",
+      "importance": 0.18351599289705958
     },
     {
       "feature": "numeric__failed_attempt_risk",
-      "importance": 0.010554860890437105
+      "importance": 0.17523473982617396
+    },
+    {
+      "feature": "numeric__location_change",
+      "importance": 0.1694910084202923
+    },
+    {
+      "feature": "numeric__previous_failed_txns",
+      "importance": 0.1100789025849455
+    },
+    {
+      "feature": "numeric__amount",
+      "importance": 0.10591190890651833
     },
     {
       "feature": "numeric__is_weekend",
-      "importance": 0.001682278354761242
+      "importance": 0.10018282628350136
+    },
+    {
+      "feature": "numeric__is_high_amount",
+      "importance": 0.09073579633085471
+    },
+    {
+      "feature": "numeric__account_age_days",
+      "importance": 0.08039097987887518
+    },
+    {
+      "feature": "numeric__is_high_velocity",
+      "importance": 0.02400535534562113
     }
   ]
 }

@@ -10,9 +10,12 @@ from typing import Any
 import joblib
 
 from config import (
+    ARTIFACT_SCHEMA_VERSION,
     DATA_PATH,
+    MODEL_FEATURES,
     MODEL_METADATA_PATH,
     MODEL_PATH,
+    NON_MODEL_INPUT_FEATURES,
     PREPROCESSOR_PATH,
     ensure_directories,
 )
@@ -36,10 +39,18 @@ def model_artifacts_are_valid() -> bool:
         metadata = read_json(MODEL_METADATA_PATH)
         validate_model_metadata(metadata)
         get_fraud_class_index(model)
+        transformed_feature_count = len(preprocessor.get_feature_names_out())
         return (
             callable(getattr(model, "predict_proba", None))
             and callable(getattr(preprocessor, "transform", None))
             and hasattr(preprocessor, "transformers_")
+            and list(getattr(preprocessor, "feature_names_in_", [])) == MODEL_FEATURES
+            and metadata["model_version"] == ARTIFACT_SCHEMA_VERSION
+            and metadata["feature_list"] == MODEL_FEATURES
+            and metadata["non_model_input_features"] == NON_MODEL_INPUT_FEATURES
+            and int(getattr(model, "n_features_in_", -1)) == transformed_feature_count
+            and int(metadata.get("transformed_feature_count", -1))
+            == transformed_feature_count
         )
     except (
         OSError,

@@ -24,10 +24,11 @@ def build_preprocessor() -> ColumnTransformer:
             ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=True)),
         ]
     )
-    return ColumnTransformer(
-        transformers=[
-            ("numeric", numerical_pipeline, NUMERICAL_FEATURES),
-            ("categorical", categorical_pipeline, CATEGORICAL_FEATURES),
-        ],
-        remainder="drop",
-    )
+    transformers = []
+    if NUMERICAL_FEATURES:
+        transformers.append(("numeric", numerical_pipeline, NUMERICAL_FEATURES))
+    if CATEGORICAL_FEATURES:
+        transformers.append(("categorical", categorical_pipeline, CATEGORICAL_FEATURES))
+    if not transformers:
+        raise ValueError("At least one model feature is required.")
+    return ColumnTransformer(transformers=transformers, remainder="drop")
