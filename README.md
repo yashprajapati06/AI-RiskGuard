@@ -49,8 +49,6 @@ presets, and review the Dashboard, Monitor, Alerts, and Model Performance pages.
 - [Risk scoring and rules](#13-risk-scoring-formula)
 - [Installation and commands](#15-installation)
 - [Security, limitations, and future scope](#22-security-and-privacy)
-- [Two-minute viva explanation](#27-two-minute-viva-explanation)
-- [Likely interview questions](#28-likely-interview-questions)
 
 ## 1. Project overview
 
@@ -91,7 +89,7 @@ For every submitted synthetic transaction, the project returns:
 - Approximately 2–8% fraud, with both target classes present
 - Shared training/inference feature engineering, including safe `amount_ratio`
 - Median imputation, standard scaling, and unknown-safe one-hot encoding
-- Stratified train/test split with preprocessing fitted only on training rows
+- Locked stratified test split plus five-fold training-only cross-validation
 - Logistic Regression and Random Forest with imbalance-aware class weights
 - Actual Accuracy, Precision, Recall, F1, ROC-AUC, FPR, FNR, and confusion matrix
 - Automatic fraud-oriented model selection and joblib persistence
@@ -264,14 +262,20 @@ preventing training/inference mismatch.
 
 ## 10. Fraud detection models
 
-Two classifiers are always trained:
+Two classifiers are tuned and trained:
 
-1. **Logistic Regression** — scaled, explainable baseline with
-   `class_weight="balanced"`.
-2. **Random Forest** — nonlinear ensemble with balanced subsample class weights.
+1. **Logistic Regression** — scaled, explainable baseline with tuned regularization,
+   solver, and fraud-class weight.
+2. **Random Forest** — nonlinear ensemble with tuned depth, leaf size, and class
+   weight.
 
-Both use the same train-only fitted `ColumnTransformer`. The 80/20 split is
-stratified with random state 42. Model selection uses this documented composite:
+The outer 80/20 split is stratified with random state 42. The 20% test partition
+is locked and does not influence hyperparameters or model selection. Inside the
+80% training partition, both candidates use five-fold stratified cross-validation
+with preprocessing fitted independently inside each fold.
+
+A configuration is eligible only when its mean cross-validation false-positive
+rate is at most 20%. Eligible configurations use this documented composite:
 
 ```text
 selection score = 0.35 × recall
@@ -280,26 +284,33 @@ selection score = 0.35 × recall
                 + 0.10 × precision
 ```
 
-This emphasizes fraud recall and F1, then ROC-AUC and precision. The exact latest
-metrics for **both** models are saved in `models/model_metadata.json` and shown in
-the Model Performance page. They are never hardcoded or fabricated.
+This emphasizes fraud recall and F1, then ROC-AUC and precision, without allowing
+an extreme false-alert rate to win. The exact cross-validation parameters and
+final test metrics for **both** models are saved in
+`models/model_metadata.json` and shown in the Model Performance page. They are
+never hardcoded or fabricated.
 
 ### Leakage controls
 
 - `transaction_id`, `user_id`, and `merchant_id` are never model features.
 - `fraud` is used only as the target and never enters the feature matrix.
 - The train/test split occurs before fitting the preprocessor.
-- Imputation, scaling, and encoding are fitted on training rows only.
+- Cross-validation preprocessing is refitted separately inside each training fold.
+- Imputation, scaling, and encoding for the saved model are fitted on all training
+  rows only after tuning.
+- The locked test partition is used once for final reporting, not model selection.
 - The fitted preprocessor is saved and reused unchanged during inference.
 - Fraud probability is selected by class label `1`, not a fixed column assumption.
 
 ### Latest generated training result
 
-The included artifacts were trained on 12,000 generated rows. The authoritative
-metrics are always loaded from `models/model_metadata.json` and displayed by the
-Model Performance page, preventing documentation values from becoming stale
-after retraining. Synthetic data and a simple educational baseline do not
-represent production-grade fraud detection.
+The included version 1.1 artifacts were trained on 12,000 generated rows. Compared
+with the previous model, training-only tuning reduced held-out false-positive rate
+from 23.99% to 19.32% and improved held-out F1 from 21.96% to 23.91%. Recall changed
+from 64.84% to 60.16%, an explicit trade-off for fewer false alerts. The
+authoritative metrics are always loaded from `models/model_metadata.json` and
+displayed by the Model Performance page. Synthetic data and an educational
+baseline do not represent production-grade fraud detection.
 
 ## 11. Why accuracy alone is not enough
 
@@ -583,5 +594,3 @@ AI RiskGuard is a student demonstration. Fraud probability is an experimental
 model output, not a production financial decision. The application does not
 authorize, decline, or block payments. Any real-world system requires qualified
 human oversight and extensive validation beyond this project.
-
-

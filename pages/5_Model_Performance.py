@@ -71,7 +71,13 @@ for column, (label, key) in zip(
 st.caption(f"Selection rule: {metadata['selection_reason']}")
 st.warning(
     "Fraud is the minority class, so accuracy can look high even when a model misses "
-    "fraud. Model selection therefore emphasizes recall and F1, then ROC-AUC and precision."
+    "fraud. Tuning therefore emphasizes recall and F1 while limiting mean "
+    "cross-validation false positives to the documented review-capacity threshold."
+)
+st.info(
+    f"Hyperparameters and the winning model were selected with "
+    f"{metadata['cv_folds']}-fold cross-validation on training rows only. The final "
+    "metrics below come from the untouched test partition."
 )
 
 with st.expander("What do these metrics mean?"):
@@ -101,10 +107,20 @@ comparison_columns = [
     "roc_auc",
     "false_positive_rate",
     "false_negative_rate",
+    "cv_selection_score",
     "selection_score",
 ]
-st.subheader("Logistic Regression vs Random Forest")
+st.subheader("Tuned Logistic Regression vs Random Forest")
 st.dataframe(comparison[comparison_columns].round(4), hide_index=True, width="stretch")
+st.caption(
+    "CV selection score determines the saved model. Test selection score is shown "
+    "only as a held-out diagnostic and does not influence model selection."
+)
+
+with st.expander("Selected hyperparameters"):
+    for model_name, metrics in metadata["models"].items():
+        st.markdown(f"**{model_name.replace('_', ' ').title()}**")
+        st.json(metrics["best_parameters"])
 
 left, right = st.columns([1, 1.25])
 with left:

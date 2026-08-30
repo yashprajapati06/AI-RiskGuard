@@ -81,6 +81,9 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
         "fraud_rate",
         "models",
         "feature_list",
+        "cv_folds",
+        "maximum_cv_false_positive_rate",
+        "selection_partition",
     }
     missing = required_top_level.difference(metadata)
     if missing:
@@ -109,6 +112,15 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
     fraud_rate = float(metadata["fraud_rate"])
     if not math.isfinite(fraud_rate) or not 0 <= fraud_rate <= 1:
         raise ValueError("Model metadata fraud_rate must be between 0 and 1.")
+    if int(metadata["cv_folds"]) < 2:
+        raise ValueError("Model metadata cv_folds must be at least 2.")
+    maximum_cv_fpr = float(metadata["maximum_cv_false_positive_rate"])
+    if not math.isfinite(maximum_cv_fpr) or not 0 <= maximum_cv_fpr <= 1:
+        raise ValueError(
+            "Model metadata maximum_cv_false_positive_rate must be between 0 and 1."
+        )
+    if metadata["selection_partition"] != "training_only_cross_validation":
+        raise ValueError("Model selection must use training-only cross-validation.")
 
     required_metrics = {
         "accuracy",
@@ -120,11 +132,17 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
         "false_negative_rate",
         "confusion_matrix",
         "selection_score",
+        "cv_selection_score",
+        "cv_metrics",
+        "best_parameters",
     }
     for model_name, metrics in metadata["models"].items():
         if not isinstance(metrics, dict) or not required_metrics.issubset(metrics):
             raise ValueError(f"Metrics are incomplete for {model_name}.")
-        for metric_name in required_metrics.difference({"confusion_matrix"}):
+        scalar_metrics = required_metrics.difference(
+            {"confusion_matrix", "cv_metrics", "best_parameters"}
+        )
+        for metric_name in scalar_metrics:
             value = float(metrics[metric_name])
             if not math.isfinite(value) or not 0 <= value <= 1:
                 raise ValueError(f"{model_name}.{metric_name} must be between 0 and 1.")
@@ -135,3 +153,32 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
             or any(not isinstance(row, list) or len(row) != 2 for row in matrix)
         ):
             raise ValueError(f"{model_name}.confusion_matrix must be a 2x2 list.")
+        cv_metrics = metrics["cv_metrics"]
+        if not isinstance(cv_metrics, dict):
+            raise TypeError(f"{model_name}.cv_metrics must be an object.")
+        required_cv_metrics = {
+            "precision",
+            "recall",
+            "f1",
+            "roc_auc",
+            "specificity",
+            "false_positive_rate",
+            "selection_score",
+        }
+        if not required_cv_metrics.issubset(cv_metrics):
+            raise ValueError(f"CV metrics are incomplete for {model_name}.")
+        for metric_name in required_cv_metrics:
+            value = float(cv_metrics[metric_name])
+            if not math.isfinite(value) or not 0 <= value <= 1:
+                raise ValueError(
+                    f"{model_name}.cv_metrics.{metric_name} must be between 0 and 1."
+                )
+        if (
+            float(cv_metrics["false_positive_rate"])
+            > maximum_cv_fpr + 1e-12
+        ):
+            raise ValueError(f"{model_name} exceeds the cross-validation FPR limit.")
+        if not isinstance(metrics["best_parameters"], dict) or not metrics[
+            "best_parameters"
+        ]:
+            raise TypeError(f"{model_name}.best_parameters must be a non-empty object.")

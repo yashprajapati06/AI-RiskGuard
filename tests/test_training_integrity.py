@@ -79,6 +79,21 @@ def test_complete_model_artifact_set_loads() -> None:
     assert model_artifacts_are_valid()
 
 
+def test_model_selection_uses_training_only_cross_validation() -> None:
+    metadata = read_json(MODEL_METADATA_PATH)
+    assert metadata["selection_partition"] == "training_only_cross_validation"
+    selected_by_cv = max(
+        metadata["models"],
+        key=lambda name: metadata["models"][name]["cv_selection_score"],
+    )
+    assert metadata["selected_model"] == selected_by_cv
+    for metrics in metadata["models"].values():
+        assert metrics["cv_metrics"]["false_positive_rate"] <= metadata[
+            "maximum_cv_false_positive_rate"
+        ]
+        assert metrics["best_parameters"]
+
+
 def test_incomplete_artifact_set_is_detected(tmp_path, monkeypatch) -> None:
     from src import bootstrap
 
