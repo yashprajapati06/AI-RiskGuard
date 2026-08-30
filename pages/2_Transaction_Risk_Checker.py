@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 import streamlit as st
 
@@ -82,6 +83,11 @@ st.caption(
     "Model inputs: nine source-supported raw fields plus five derived signals. "
     "New Device and Merchant Risk affect rules only. Payment Method and Device "
     "Type are saved as demonstration context and do not change the ML estimate."
+)
+st.info(
+    "After changing any field, click **Analyze Transaction** to refresh the result. "
+    "The model is deterministic, so submitting the same values returns the same "
+    "score. Payment Method and Device Type are context-only fields."
 )
 
 with st.form("risk_checker_form", clear_on_submit=False):
@@ -204,6 +210,7 @@ if submitted:
         st.session_state["last_riskguard_result"] = {
             "transaction": transaction,
             "analysis": analysis,
+            "analyzed_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         }
         st.success(
             "Analysis completed. The recommendation and anonymous monitoring record "
@@ -225,6 +232,10 @@ if result:
     analysis = result["analysis"]
     transaction = result["transaction"]
     st.divider()
+    st.caption(
+        f"Result refreshed: {result.get('analyzed_at', 'this session')} · "
+        f"Transaction ID: {transaction['transaction_id']}"
+    )
     render_risk_status(analysis["risk_level"], analysis["recommended_action"])
     metrics = st.columns(4)
     metrics[0].metric(

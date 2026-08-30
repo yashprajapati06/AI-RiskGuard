@@ -236,6 +236,7 @@ def test_streamlit_checker_form_submission(monkeypatch: pytest.MonkeyPatch) -> N
     assert captured["saved_transaction"] == submitted
     assert captured["saved_analysis"] == fake_analysis
     assert any("Analysis completed" in item.value for item in app.success)
+    assert any("After changing any field" in item.value for item in app.info)
     assert [(metric.label, metric.value) for metric in app.metric] == [
         ("ML Fraud-Likelihood Estimate", "10.00%"),
         ("ML Risk Score", "10.00 / 100"),
@@ -243,3 +244,8 @@ def test_streamlit_checker_form_submission(monkeypatch: pytest.MonkeyPatch) -> N
         ("Final Risk Score", "13.00 / 100"),
     ]
     assert app.session_state["last_riskguard_result"]["analysis"] == fake_analysis
+    assert re.fullmatch(
+        r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC",
+        app.session_state["last_riskguard_result"]["analyzed_at"],
+    )
+    assert any("Result refreshed:" in item.value for item in app.caption)
