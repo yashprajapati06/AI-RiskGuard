@@ -555,8 +555,19 @@ not retrain the 500,000-row dataset or enter a rerun loop.
 python -m pytest
 ```
 
-Tests do not exercise Streamlit widgets. They cover the reusable backend and an
-isolated temporary SQLite database.
+Tests cover the reusable backend, an isolated temporary SQLite database, and the
+Transaction Risk Checker form through Streamlit's `AppTest`. A deterministic QA
+batch also runs 20 random held-out transactions (10 from each target class for
+coverage only) through validation, class-aware probability extraction, rules,
+final scoring, insertion, alert creation, and duplicate protection. The target
+is never passed to inference, and this deliberately balanced smoke batch is not
+reported as a model-performance estimate.
+
+To run only the transaction checker QA:
+
+```bash
+python -m pytest tests/test_transaction_checker_qa.py -q
+```
 
 Additional verification commands:
 
