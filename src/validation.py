@@ -1,4 +1,4 @@
-"""Validation for manual transactions and training datasets."""
+"""Checks for transaction input and training data."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from config import (
 
 
 class TransactionValidationError(ValueError):
-    """Raised when a transaction fails one or more validation rules."""
+    """Raised when transaction input is invalid."""
 
     def __init__(self, errors: list[str]):
         self.errors = errors
@@ -61,11 +61,7 @@ def _number(
 
 
 def validate_transaction(transaction: Mapping[str, Any]) -> dict[str, Any]:
-    """Validate and normalize one inference transaction.
-
-    Returns a clean copy and raises ``TransactionValidationError`` containing
-    user-friendly messages when validation fails.
-    """
+    """Validate a transaction and return a normalized copy."""
     if not isinstance(transaction, Mapping):
         raise TransactionValidationError(
             ["Transaction input must be a mapping of fields."]
@@ -155,7 +151,7 @@ def validate_transaction(transaction: Mapping[str, Any]) -> dict[str, Any]:
 def validate_training_dataset(
     dataframe: pd.DataFrame, minimum_rows: int = 1_000
 ) -> None:
-    """Validate schema, size, target values, and basic feature constraints."""
+    """Check that a dataset is ready for training."""
     missing = [
         column for column in REQUIRED_DATASET_COLUMNS if column not in dataframe.columns
     ]

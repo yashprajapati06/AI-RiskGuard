@@ -1,4 +1,4 @@
-"""AI RiskGuard Streamlit entry point."""
+"""Main entry point for the RiskGuard workspace."""
 
 from __future__ import annotations
 
@@ -15,69 +15,75 @@ from src.ui_helpers import (
 
 configure_page("Home")
 render_header(
-    "🛡️ AI RiskGuard",
-    "A local, explainable digital payment risk management prototype",
+    "AI RiskGuard",
+    "Review transaction risk signals, model output, and manual-review alerts in one local workspace.",
 )
 
 needs_training = not model_artifacts_are_valid()
 needs_data = not DATA_PATH.exists()
 if needs_data:
-    st.warning("Training dataset not found. Generating the local synthetic fallback…")
+    st.warning("The training dataset is missing. A local synthetic copy is being prepared.")
 if needs_training:
-    st.warning("Model artifacts not found. Training both candidate models now…")
+    st.warning("The saved model is unavailable. Both candidate models are being retrained.")
 
 with st.spinner(
-    "Preparing the local project…" if needs_data or needs_training else "Loading…"
+    "Preparing the workspace…" if needs_data or needs_training else "Loading workspace…"
 ):
     initialization_status = ensure_app_ready()
 display_initialization_notice(initialization_status)
 
-st.subheader("Project at a glance")
+st.subheader("Workspace overview")
 columns = st.columns(4)
 columns[0].metric(
-    "ML Models Compared", "2", help="Logistic Regression and Random Forest"
+    "Models evaluated", "2", help="Logistic Regression and Random Forest"
 )
 columns[1].metric(
-    "Validated Inputs", "13", help="Behavioral fields only—no payment credentials"
+    "Validated inputs", "13", help="Behavioral fields only—no payment credentials"
 )
-columns[2].metric("Risk Outcomes", "3", help="LOW, MEDIUM, and HIGH")
+columns[2].metric("Risk bands", "3", help="LOW, MEDIUM, and HIGH")
 columns[3].metric(
-    "Local Persistence", "SQLite", help="Transactions and HIGH-risk alerts"
+    "Local data store", "SQLite", help="Transactions and HIGH-risk alerts"
 )
 
-left, right = st.columns([1.25, 1])
+left, right = st.columns([1.2, 1], gap="large")
 with left:
     st.markdown(
         """
-        #### How the system works
+        #### From transaction to review
 
-        1. **Validate** a synthetic transaction and reject malformed or sensitive input.
-        2. **Engineer features** such as amount deviation and unusual-hour indicators.
-        3. **Score risk** with an ML likelihood estimate and transparent prototype rules.
-        4. **Recommend action** using a bounded 0–100 combined score.
-        5. **Monitor locally** by saving the result and creating a HIGH-risk alert.
+        Each check follows the same short workflow:
 
-        Anonymous IDs are stored for monitoring but deliberately excluded from ML
-        training to avoid meaningless high-cardinality patterns.
+        1. Validate the transaction fields and reject sensitive inputs.
+        2. Build behavioral signals such as amount deviation and unusual-hour activity.
+        3. Combine the model estimate with a transparent rule score.
+        4. Assign a LOW, MEDIUM, or HIGH review recommendation.
+        5. Save the anonymous result for local monitoring.
+
+        Anonymous IDs remain available for record lookup, but they are kept out of
+        model training because they carry no reliable behavioral meaning.
         """
     )
 with right:
-    st.markdown("#### Suggested demonstration path")
+    st.markdown("#### Start a review")
     st.markdown(
         """
-        Use the sidebar in this order:
+        Open **Transaction Risk Checker** to assess one of the three sample profiles
+        or adjust the fields yourself. Saved assessments appear automatically across
+        the rest of the workspace.
 
-        - **Transaction Risk Checker:** compare Normal, Medium, and High presets.
-        - **Dashboard:** review KPIs and charts created from saved analyses.
-        - **Transaction Monitor:** filter and inspect records.
-        - **Risk Alerts:** view HIGH-risk review recommendations.
-        - **Model Performance:** explain model selection and evaluation trade-offs.
+        - **Dashboard** gives a quick operational view.
+        - **Transaction Monitor** lets you filter and inspect records.
+        - **Risk Alerts** collects HIGH-risk recommendations.
+        - **Model Performance** documents training and evaluation results.
         """
+    )
+    st.page_link(
+        "pages/2_Transaction_Risk_Checker.py",
+        label="Start a transaction check",
     )
 
 st.warning(
-    "Safe-use boundary: never enter a card number, CVV, OTP, PIN, UPI PIN, bank "
-    "password, or authentication secret. This prototype must not be used for real "
-    "financial decisions or payment authorization.",
-    icon="⚠️",
+    "Use demonstration data only. Never enter a card number, CVV, OTP, PIN, UPI "
+    "PIN, bank password, or authentication secret. This prototype must not be used "
+    "for real financial decisions or payment authorization."
 )

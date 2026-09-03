@@ -1,4 +1,4 @@
-"""Live transaction monitoring dashboard."""
+"""Operational overview of saved transaction assessments."""
 
 from __future__ import annotations
 
@@ -8,45 +8,51 @@ import streamlit as st
 
 from config import HIGH_RISK_THRESHOLD
 from src.database import get_alerts, get_dashboard_summary, get_transactions
-from src.ui_helpers import RISK_COLORS, configure_page, ensure_app_ready, render_header
+from src.ui_helpers import (
+    RISK_COLORS,
+    configure_page,
+    ensure_app_ready,
+    render_header,
+    style_chart,
+)
 
 configure_page("Dashboard", "📊")
 ensure_app_ready()
 render_header(
-    "📊 Monitoring Dashboard",
-    "Operational summary of synthetic transaction analyses stored in local SQLite.",
+    "Monitoring dashboard",
+    "A live view of the transaction assessments stored in the local workspace.",
 )
 
 summary = get_dashboard_summary()
+st.subheader("Current activity")
 overview_columns = st.columns(3)
-overview_columns[0].metric("Total Analyzed Transactions", f"{summary['total']:,}")
+overview_columns[0].metric("Analyzed transactions", f"{summary['total']:,}")
 overview_columns[1].metric(
-    "Average Combined Risk", f"{summary['average_risk']:.1f} / 100"
+    "Average combined risk", f"{summary['average_risk']:.1f} / 100"
 )
-overview_columns[2].metric("High-Risk Share", f"{summary['high_risk_percentage']:.1f}%")
+overview_columns[2].metric("High-risk share", f"{summary['high_risk_percentage']:.1f}%")
 
 level_columns = st.columns(3)
-level_columns[0].metric("✅ LOW Risk", f"{summary['low_count']:,}")
-level_columns[1].metric("⚠️ MEDIUM Risk", f"{summary['medium_count']:,}")
-level_columns[2].metric("🚨 HIGH Risk", f"{summary['high_count']:,}")
+level_columns[0].metric("LOW risk", f"{summary['low_count']:,}")
+level_columns[1].metric("MEDIUM risk", f"{summary['medium_count']:,}")
+level_columns[2].metric("HIGH risk", f"{summary['high_count']:,}")
 st.caption(
-    "These counts describe model recommendations, not confirmed fraud outcomes. "
-    "Ground-truth labels are not available for manually analyzed transactions."
+    "These are review recommendations, not confirmed fraud outcomes. Manually "
+    "assessed transactions do not have ground-truth labels."
 )
 
 transactions = get_transactions()
 if transactions.empty:
     st.info(
-        "The monitoring database is ready but currently empty. Open **Transaction "
-        "Risk Checker**, choose a demonstration preset, and select **Analyze "
-        "Transaction**. The saved result will populate these KPIs and charts.",
-        icon="💡",
+        "There are no saved assessments yet. Run a sample in **Transaction Risk "
+        "Checker** and the result will appear here."
     )
     st.stop()
 
 transactions["created_at"] = pd.to_datetime(transactions["created_at"], utc=True)
 transactions["date"] = transactions["created_at"].dt.date
 
+st.subheader("Assessment patterns")
 chart_left, chart_right = st.columns(2)
 with chart_left:
     risk_counts = (
@@ -66,7 +72,7 @@ with chart_left:
         labels={"risk_level": "Risk level", "count": "Transactions"},
     )
     figure.update_layout(showlegend=False)
-    st.plotly_chart(figure, width="stretch")
+    st.plotly_chart(style_chart(figure), width="stretch")
 
 with chart_right:
     method_counts = transactions["payment_method"].value_counts().reset_index()
@@ -78,7 +84,7 @@ with chart_right:
         hole=0.45,
         title="Transactions by payment method",
     )
-    st.plotly_chart(figure, width="stretch")
+    st.plotly_chart(style_chart(figure), width="stretch")
 
 chart_left, chart_right = st.columns(2)
 with chart_left:
@@ -91,7 +97,7 @@ with chart_left:
         title="Risk score distribution",
         labels={"final_risk_score": "Final risk score", "count": "Transactions"},
     )
-    st.plotly_chart(figure, width="stretch")
+    st.plotly_chart(style_chart(figure), width="stretch")
 
 with chart_right:
     daily = transactions.groupby("date").size().reset_index(name="transactions")
@@ -103,7 +109,7 @@ with chart_right:
         title="Transaction analysis trend",
         labels={"date": "Date", "transactions": "Transactions"},
     )
-    st.plotly_chart(figure, width="stretch")
+    st.plotly_chart(style_chart(figure), width="stretch")
 
 high_daily = (
     transactions.loc[transactions["risk_level"] == "HIGH"]
@@ -121,9 +127,9 @@ if not high_daily.empty:
         labels={"date": "Date", "high_risk_transactions": "High-risk transactions"},
         color_discrete_sequence=[RISK_COLORS["HIGH"]],
     )
-    st.plotly_chart(figure, width="stretch")
+    st.plotly_chart(style_chart(figure), width="stretch")
 
-st.subheader("Recent high-risk alerts")
+st.subheader("Latest high-risk alerts")
 alerts = get_alerts(limit=10)
 if alerts.empty:
     st.success(
@@ -151,11 +157,10 @@ else:
 with st.expander("How to interpret this dashboard"):
     st.markdown(
         """
-        - **Risk distribution** shows recommendation volume by LOW, MEDIUM, and HIGH.
-        - **Payment method analysis** describes the saved synthetic inputs; it does
-          not prove that one payment method causes fraud.
-        - **Risk score distribution** helps identify whether results cluster near a
-          decision threshold.
-        - **Trends** show when analyses were performed, not real payment traffic.
+        - **Risk distribution** shows assessment volume across the three risk bands.
+        - **Payment method** reflects saved demonstration inputs. It does not imply
+          that a payment method causes fraud.
+        - **Risk score distribution** shows whether results cluster near a threshold.
+        - **Trends** show when assessments were run, not real payment traffic.
         """
     )

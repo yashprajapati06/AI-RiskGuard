@@ -5,7 +5,12 @@ from copy import deepcopy
 import pytest
 
 from config import ARTIFACT_SCHEMA_VERSION
-from src.utils import parse_json_list, read_json, validate_model_metadata
+from src.utils import (
+    atomic_joblib_dump,
+    parse_json_list,
+    read_json,
+    validate_model_metadata,
+)
 
 
 def _valid_metadata() -> dict:
@@ -49,6 +54,9 @@ def _valid_metadata() -> dict:
         "source_dataset_rows": 10,
         "source_sampling_strategy": "complete_fixture",
         "amount_normalization": "None.",
+        "dataset_sha256": "0" * 64,
+        "model_sha256": "1" * 64,
+        "preprocessor_sha256": "2" * 64,
         "training_rows": 3,
         "test_rows": 7,
         "tuning_rows": 2,
@@ -97,6 +105,36 @@ def test_model_metadata_rejects_stale_schema_version() -> None:
 
     with pytest.raises(ValueError, match="incompatible"):
         validate_model_metadata(metadata)
+
+
+def test_model_metadata_rejects_invalid_artifact_digest() -> None:
+    metadata = _valid_metadata()
+    metadata["model_sha256"] = "not-a-digest"
+
+    with pytest.raises(ValueError, match="model_sha256"):
+        validate_model_metadata(metadata)
+
+
+def test_atomic_joblib_dump_preserves_existing_artifact(
+    tmp_path, monkeypatch
+) -> None:
+    from src import utils
+
+    artifact_path = tmp_path / "artifact.pkl"
+    artifact_path.write_bytes(b"known-good")
+
+    def interrupted_dump(payload, path, *, compress):
+        del payload, compress
+        path.write_bytes(b"partial")
+        raise RuntimeError("interrupted")
+
+    monkeypatch.setattr(utils.joblib, "dump", interrupted_dump)
+
+    with pytest.raises(RuntimeError, match="interrupted"):
+        atomic_joblib_dump({"new": "artifact"}, artifact_path)
+
+    assert artifact_path.read_bytes() == b"known-good"
+    assert not artifact_path.with_suffix(".pkl.tmp").exists()
 
 
 def test_model_metadata_rejects_incomplete_refit() -> None:

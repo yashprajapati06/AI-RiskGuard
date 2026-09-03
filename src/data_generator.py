@@ -1,4 +1,4 @@
-"""Generate realistic, reproducible synthetic payment transactions."""
+"""Synthetic transaction data for local demos and tests."""
 
 from __future__ import annotations
 
@@ -33,10 +33,10 @@ def generate_synthetic_transactions(
     random_state: int = RANDOM_STATE,
     force: bool = False,
 ) -> pd.DataFrame:
-    """Generate and save probabilistically labelled synthetic transactions.
+    """Generate and save a repeatable synthetic dataset.
 
-    Labels depend on multiple interacting risk factors and random noise. No real
-    payment credentials or personally identifiable information are produced.
+    Labels mix several risk signals with random noise. No real payment or personal
+    data is created.
     """
     output_path = Path(output_path)
     if output_path.exists() and not force:
@@ -111,7 +111,7 @@ def generate_synthetic_transactions(
     amount_ratio = amount / np.maximum(avg_amount, 1e-6)
     unusual_hour = np.isin(hour_of_day, [0, 1, 2, 3, 4]).astype(int)
 
-    # A noisy nonlinear risk process keeps labels realistic and non-deterministic.
+    # Noise keeps the labels from becoming a direct copy of the rules.
     log_odds = (
         -5.40
         + 0.90 * np.log1p(amount_ratio)
@@ -184,7 +184,7 @@ def generate_synthetic_transactions(
 
 
 def load_or_generate_dataset(path: Path | str = DATA_PATH) -> pd.DataFrame:
-    """Load an existing dataset or create the default one."""
+    """Load the dataset, creating it when it is missing."""
     path = Path(path)
     if path.exists():
         return pd.read_csv(path)

@@ -1,7 +1,8 @@
-"""Shared utility helpers."""
+"""Small helpers used across the project."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -10,13 +11,14 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
+import joblib
 import numpy as np
 
 from config import ARTIFACT_SCHEMA_VERSION
 
 
 def configure_logging() -> None:
-    """Configure concise application logging once."""
+    """Set the default application log format."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -24,7 +26,7 @@ def configure_logging() -> None:
 
 
 def clamp(value: float, minimum: float = 0.0, maximum: float = 100.0) -> float:
-    """Clamp a numeric value to an inclusive range."""
+    """Keep a number inside an inclusive range."""
     numeric_value = float(value)
     if not math.isfinite(numeric_value):
         raise ValueError("Numeric value must be finite.")
@@ -34,7 +36,7 @@ def clamp(value: float, minimum: float = 0.0, maximum: float = 100.0) -> float:
 
 
 class JsonEncoder(json.JSONEncoder):
-    """Serialize common NumPy scalar and array types in metadata."""
+    """Handle NumPy values when writing metadata."""
 
     def default(self, obj: Any) -> Any:
         if isinstance(obj, np.integer):
@@ -47,7 +49,7 @@ class JsonEncoder(json.JSONEncoder):
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
-    """Atomically write formatted UTF-8 JSON."""
+    """Write formatted JSON through a temporary file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_suffix(f"{path.suffix}.tmp")
     temporary_path.write_text(
@@ -58,7 +60,7 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def read_json(path: Path) -> dict[str, Any]:
-    """Read a UTF-8 JSON object."""
+    """Read a JSON object."""
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise TypeError(f"Expected a JSON object in {path.name}.")
@@ -66,7 +68,7 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def parse_json_list(value: Any) -> list[str]:
-    """Safely parse a stored JSON list for presentation."""
+    """Parse a stored JSON list, returning an empty list on bad input."""
     try:
         payload = json.loads(str(value))
     except (json.JSONDecodeError, TypeError):
@@ -76,8 +78,28 @@ def parse_json_list(value: Any) -> list[str]:
     return [str(item) for item in payload]
 
 
+def file_sha256(path: Path) -> str:
+    """Hash a file in chunks."""
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def atomic_joblib_dump(payload: Any, path: Path, *, compress: int = 3) -> None:
+    """Write a joblib artifact through a temporary file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(f"{path.suffix}.tmp")
+    try:
+        joblib.dump(payload, temporary_path, compress=compress)
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
 def validate_model_metadata(metadata: dict[str, Any]) -> None:
-    """Validate the persisted metadata structure used by monitoring pages."""
+    """Validate metadata used by training and monitoring."""
     required_top_level = {
         "model_version",
         "selected_model",
@@ -105,6 +127,9 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
         "refit_rows",
         "transformed_feature_count",
         "amount_normalization",
+        "dataset_sha256",
+        "model_sha256",
+        "preprocessor_sha256",
     }
     missing = required_top_level.difference(metadata)
     if missing:
@@ -160,6 +185,14 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
     ):
         if not isinstance(metadata[key], str) or not metadata[key].strip():
             raise TypeError(f"Model metadata {key} must be a non-empty string.")
+    for key in ("dataset_sha256", "model_sha256", "preprocessor_sha256"):
+        value = metadata[key]
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdefABCDEF" for character in value)
+        ):
+            raise ValueError(f"Model metadata {key} must be a SHA-256 digest.")
     if int(metadata["dataset_size"]) <= 0:
         raise ValueError("Model metadata dataset_size must be positive.")
     dataset_size = int(metadata["dataset_size"])

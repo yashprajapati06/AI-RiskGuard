@@ -1,4 +1,4 @@
-"""Reusable transaction prediction service."""
+"""Transaction scoring service."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ LOGGER = logging.getLogger(__name__)
 
 @lru_cache(maxsize=1)
 def load_model_artifacts() -> tuple[Any, Any]:
-    """Load compatible persisted artifacts, retraining once when required."""
+    """Load the model files, retraining if they are missing or stale."""
     from src.bootstrap import model_artifacts_are_valid
 
     if not model_artifacts_are_valid():
@@ -44,17 +44,12 @@ def load_model_artifacts() -> tuple[Any, Any]:
 
 
 def clear_model_cache() -> None:
-    """Clear the in-process artifact cache after explicit retraining."""
+    """Clear the model cache after retraining."""
     load_model_artifacts.cache_clear()
 
 
 def analyze_transaction(transaction_data: dict[str, Any]) -> dict[str, Any]:
-    """Validate, score, explain, and classify one synthetic transaction.
-
-    The function is deliberately persistence-free so tests, Streamlit, or a future
-    trusted interface can reuse it. Callers decide whether to store the returned
-    recommendation with ``save_analysis``.
-    """
+    """Validate and score one transaction without writing it to the database."""
     clean_transaction = validate_transaction(transaction_data)
     engineered = engineer_features(clean_transaction)
     model, preprocessor = load_model_artifacts()

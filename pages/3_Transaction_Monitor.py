@@ -1,4 +1,4 @@
-"""Filter and inspect saved transaction records."""
+"""Search and inspect saved transaction assessments."""
 
 from __future__ import annotations
 
@@ -12,10 +12,11 @@ from src.utils import parse_json_list
 configure_page("Transaction Monitor", "🧾")
 ensure_app_ready()
 render_header(
-    "🧾 Transaction Monitor",
-    "Filter and inspect synthetic analysis records saved in the local SQLite database.",
+    "Transaction monitor",
+    "Search the local assessment history and inspect the signals behind each result.",
 )
 
+st.subheader("Filter records")
 filter_columns = st.columns([1, 1, 1, 1.3])
 with filter_columns[0]:
     risk_level = st.selectbox("Risk Level", ["ALL", "LOW", "MEDIUM", "HIGH"])
@@ -41,20 +42,18 @@ if transactions.empty:
     )
     if filters_are_default:
         st.info(
-            "No analyses are stored yet. Use **Transaction Risk Checker** to submit "
-            "a demonstration transaction; its anonymous record will appear here.",
-            icon="💡",
+            "No assessments have been saved yet. Run a demonstration transaction in "
+            "**Transaction Risk Checker** and its anonymous record will appear here."
         )
     else:
         st.info(
-            "No records match the current filters. Broaden the risk level or payment "
-            "method, lower the minimum score, or clear the Transaction ID search.",
-            icon="🔎",
+            "No records match these filters. Try another risk level or payment method, "
+            "lower the minimum score, or clear the Transaction ID search."
         )
     st.stop()
 
 st.caption(
-    f"Showing {len(transactions):,} newest-first record(s) for the current filters."
+    f"Showing {len(transactions):,} record(s) for the current filters · newest first."
 )
 
 display_columns = [
@@ -95,7 +94,7 @@ st.caption(
     "likelihood estimate is not a calibrated real-world fraud probability."
 )
 
-st.subheader("Transaction details")
+st.subheader("Record details")
 selected_id = st.selectbox(
     "Select Transaction ID", transactions["transaction_id"].tolist()
 )

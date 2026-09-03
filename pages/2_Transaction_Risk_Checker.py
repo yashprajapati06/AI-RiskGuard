@@ -1,4 +1,4 @@
-"""Interactive transaction risk checker."""
+"""Assess one demonstration transaction and save the result."""
 
 from __future__ import annotations
 
@@ -30,8 +30,8 @@ from src.validation import TransactionValidationError, validate_transaction
 configure_page("Transaction Risk Checker", "🔎")
 ensure_app_ready()
 render_header(
-    "🔎 Transaction Risk Checker",
-    "Analyze safe demonstration inputs with the saved ML model and explainable rules.",
+    "Transaction risk checker",
+    "Review a demonstration transaction with the saved model and transparent risk rules.",
 )
 
 
@@ -40,12 +40,12 @@ def clear_previous_result() -> None:
     st.session_state.pop("last_riskguard_result", None)
 
 
-with st.expander("How the final risk score is calculated"):
+with st.expander("How scoring works"):
     st.markdown(
         f"""
-        The class-weighted model returns an **uncalibrated fraud-likelihood estimate**
-        from `predict_proba()`. It becomes the **ML risk score**. Transparent
-        educational rules produce a separate **rule risk score**.
+        The class-weighted model produces an **uncalibrated fraud-likelihood estimate**.
+        That becomes the **ML risk score**. A separate **rule risk score** captures
+        visible signals such as velocity, amount deviation, and device context.
 
         `Final score = ({ML_WEIGHT:.0%} × ML score) + ({RULE_WEIGHT:.0%} × rule score)`
 
@@ -53,9 +53,8 @@ with st.expander("How the final risk score is calculated"):
         - **MEDIUM:** {LOW_RISK_THRESHOLD:g} to below {HIGH_RISK_THRESHOLD:g} — additional verification or review
         - **HIGH:** {HIGH_RISK_THRESHOLD:g} or above — immediate manual review recommendation
 
-        This score supports a demonstration workflow; it never authorizes or blocks a payment.
-        The likelihood estimate is useful for relative risk ranking, but it is not a
-        measured fraud rate or a production-calibrated probability.
+        The score is useful for relative ranking, but it is not a measured fraud rate
+        or a production-calibrated probability. It never authorizes or blocks a payment.
         """
     )
 
@@ -80,20 +79,20 @@ preset_name = st.selectbox(
 preset = samples[preset_name]
 
 st.caption(
-    "Model inputs: nine source-supported raw fields plus five derived signals. "
-    "New Device and Merchant Risk affect rules only. Payment Method and Device "
-    "Type are saved as demonstration context and do not change the ML estimate."
+    "The model uses nine source fields and five derived signals. New Device and "
+    "Merchant Risk affect rules only; Payment Method and Device Type are stored as "
+    "context and do not change the model estimate."
 )
 st.info(
     "After changing any field, click **Analyze Transaction** to refresh the result. "
-    "The model is deterministic, so submitting the same values returns the same "
-    "score. Payment Method and Device Type are context-only fields."
+    "Submitting the same values returns the same score."
 )
 
 with st.form("risk_checker_form", clear_on_submit=False):
     st.markdown("#### Transaction details")
     col1, col2, col3 = st.columns(3)
     with col1:
+        st.markdown("##### Payment context")
         amount = st.number_input(
             "Amount (₹)",
             min_value=0.01,
@@ -129,6 +128,7 @@ with st.form("risk_checker_form", clear_on_submit=False):
             key=f"failed_{preset_name}",
         )
     with col2:
+        st.markdown("##### Behavior signals")
         txn_count_10min = st.number_input(
             "Transactions in Last 10 Minutes",
             min_value=0,
@@ -162,6 +162,7 @@ with st.form("risk_checker_form", clear_on_submit=False):
             ),
         )
     with col3:
+        st.markdown("##### Account context")
         account_age_days = st.number_input(
             "Account Age (days)",
             min_value=0,
@@ -204,7 +205,7 @@ if submitted:
         "international_transaction": int(international_transaction),
     }
     try:
-        with st.spinner("Analyzing with the trained model and prototype rules…"):
+        with st.spinner("Assessing transaction…"):
             analysis = analyze_transaction(transaction)
             save_analysis(transaction, analysis)
         st.session_state["last_riskguard_result"] = {
@@ -213,8 +214,8 @@ if submitted:
             "analyzed_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         }
         st.success(
-            "Analysis completed. The recommendation and anonymous monitoring record "
-            "were saved to the local SQLite database."
+            "Analysis completed. The recommendation and anonymous record were saved "
+            "to the local monitoring database."
         )
     except TransactionValidationError as exc:
         for error in exc.errors:
@@ -232,6 +233,7 @@ if result:
     analysis = result["analysis"]
     transaction = result["transaction"]
     st.divider()
+    st.subheader("Assessment result")
     st.caption(
         f"Result refreshed: {result.get('analyzed_at', 'this session')} · "
         f"Transaction ID: {transaction['transaction_id']}"
@@ -252,7 +254,7 @@ if result:
         f"{analysis['final_risk_score']:.2f}."
     )
 
-    st.markdown("#### Why was this recommendation produced?")
+    st.markdown("#### Why this result?")
     if analysis["triggered_rules"]:
         st.write(
             " · ".join(
@@ -263,8 +265,8 @@ if result:
             st.markdown(f"- {reason}")
     else:
         st.success(
-            "No prototype rules were triggered. The ML model may still assign a "
-            "non-zero likelihood estimate because it evaluates the full feature pattern."
+            "No rules were triggered. The model can still return a non-zero estimate "
+            "because it evaluates the full feature pattern."
         )
     st.caption(
         "Triggered factors explain the rule component. They are not a causal or exact "

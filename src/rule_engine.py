@@ -1,4 +1,4 @@
-"""Explainable prototype risk rules for educational use."""
+"""Simple risk rules used alongside the model."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from src.validation import validate_transaction
 
 
 def evaluate_rules(transaction: Mapping[str, Any]) -> dict[str, Any]:
-    """Evaluate transparent prototype rules and return a normalized score."""
+    """Run the rule checks and return their combined score."""
     enriched = engineer_features(validate_transaction(transaction)).iloc[0].to_dict()
     triggered_rules: list[str] = []
     reasons: list[str] = []

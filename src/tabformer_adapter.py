@@ -1,13 +1,9 @@
-"""Convert the IBM TabFormer credit-card archive into leakage-safe features.
+"""Prepare IBM TabFormer data for model training.
 
-The public TabFormer data is synthetic and dollar-denominated.  This adapter
-reads the Kaggle ZIP directly, discards sensitive card attributes, and applies
-a fixed ``83.0`` USD-to-INR normalization for reproducible project demos.  It
-does not use the fraud label to derive, filter, or balance any input feature.
-
-The transaction file must be grouped contiguously by user.  A user's rows may
-span any number of CSV chunks; the complete group is buffered and stably sorted
-by event time before historical features are calculated.
+TabFormer is synthetic and dollar-denominated. The adapter drops card details,
+uses the project's fixed demo multiplier, and never uses the fraud label for
+features or sampling. Transactions must stay grouped by user so history works
+across CSV chunks.
 """
 
 from __future__ import annotations
@@ -245,7 +241,7 @@ _TWENTY_FOUR_HOURS_NS: Final[int] = 24 * 60 * 60 * 1_000_000_000
 
 
 def _normalise_header(value: object) -> str:
-    """Return a punctuation-insensitive form used only for column matching."""
+    """Normalize a header for column matching."""
     return "".join(
         character for character in str(value).casefold() if character.isalnum()
     )
@@ -342,7 +338,7 @@ def _inspect_csv_members(
 
 def _normalise_identifier(values: pd.Series) -> pd.Series:
     result = values.astype("string").str.strip()
-    # CSV inference and hand-built fixtures sometimes render integer IDs as 1.0.
+    # CSV parsing can turn integer IDs into strings such as "1.0".
     return result.str.replace(r"^(-?\d+)\.0$", r"\1", regex=True)
 
 
@@ -368,7 +364,8 @@ def _load_card_open_dates(
     mapping: dict[str, str | None],
 ) -> dict[str, pd.Timestamp]:
     actual_columns = [mapping[name] for name in _CARD_ALIASES]
-    if any(column is None for column in actual_columns):  # defensive type narrowing
+    # The archive scan normally catches this, but direct calls may not.
+    if any(column is None for column in actual_columns):
         raise ValueError("The cards CSV schema is incomplete.")
 
     with archive.open(member) as source:
@@ -463,7 +460,7 @@ def _rolling_history(
     timestamps: pd.Series,
     error_flags: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Calculate strictly historical failures and current-inclusive velocity."""
+    """Build failure history and the rolling transaction count."""
     timestamp_ns = timestamps.astype("int64", copy=False).to_numpy()
     previous_failures = np.empty(len(timestamp_ns), dtype=np.int16)
     velocity = np.empty(len(timestamp_ns), dtype=np.int16)
@@ -508,10 +505,8 @@ def _derive_user_features(
     group = group.sort_values(["_timestamp", "_source_order"], kind="mergesort")
 
     amount = _parse_amount(group[mapping["amount"]])
-    # The application's transaction contract accepts debits/payments only.
-    # TabFormer also contains credits/refunds (negative) and zero-value events;
-    # exclude them instead of fabricating payment magnitudes with abs().  This
-    # label-independent filter runs before every historical feature.
+    # The app handles purchases only. Drop refunds and zero-value rows before
+    # building history so they cannot affect derived features.
     positive_payment = amount.gt(0)
     group = group.loc[positive_payment].copy()
     amount = amount.loc[positive_payment]
@@ -585,7 +580,7 @@ def _derive_user_features(
 
 
 def _sample_keys(source_order: pd.Series, seed: int) -> np.ndarray:
-    """Return deterministic, well-mixed uint64 priorities for uniform sampling."""
+    """Build stable sampling priorities from source row order."""
     values = source_order.to_numpy(dtype=np.uint64, copy=True)
     seed_value = np.uint64(seed % (1 << 64))
     with np.errstate(over="ignore"):
@@ -598,7 +593,7 @@ def _sample_keys(source_order: pd.Series, seed: int) -> np.ndarray:
 
 
 class _UniformCollector:
-    """Keep an exact bottom-k sample without consulting the target label."""
+    """Keep a bottom-k sample without looking at labels."""
 
     def __init__(self, target_rows: int | None, seed: int) -> None:
         self.target_rows = target_rows
@@ -633,8 +628,7 @@ class _UniformCollector:
         self._pending_rows = 0
 
         if self.target_rows is not None and len(combined) > self.target_rows:
-            # Lexicographic ordering provides a deterministic tie-breaker for the
-            # practically impossible case of equal 64-bit priorities.
+            # Source order breaks the unlikely tie between equal sample keys.
             combined = combined.nsmallest(
                 self.target_rows,
                 ["_sample_key", "_source_order"],
@@ -692,7 +686,7 @@ def _atomic_write_csv(dataframe: pd.DataFrame, output_path: Path) -> None:
 
 
 def _file_sha256(path: Path) -> str:
-    """Return a streaming SHA-256 digest for provenance verification."""
+    """Hash a source file in chunks."""
     digest = hashlib.sha256()
     with path.open("rb") as source:
         for block in iter(lambda: source.read(1024 * 1024), b""):
@@ -701,7 +695,7 @@ def _file_sha256(path: Path) -> str:
 
 
 def _console_safe_path(path: Path) -> str:
-    """Return a readable path that cannot fail on a legacy Windows console."""
+    """Format a path safely for older Windows consoles."""
     try:
         display = path.resolve().relative_to(Path.cwd().resolve()).as_posix()
     except ValueError:
@@ -719,7 +713,7 @@ def _write_training_provenance(
     target_rows: int | None,
     seed: int,
 ) -> None:
-    """Write the explicit source manifest consumed by model training."""
+    """Write the source manifest used during training."""
     sampling = (
         "all_positive_purchase_rows_after_label_independent_filter"
         if target_rows is None or sample_rows == eligible_rows
@@ -770,26 +764,11 @@ def adapt_tabformer_archive(
     target_rows: int | None = DEFAULT_TARGET_ROWS,
     seed: int = 42,
 ) -> pd.DataFrame:
-    """Adapt an IBM TabFormer Kaggle ZIP to AI RiskGuard transaction features.
+    """Convert a TabFormer ZIP into training rows.
 
-    Args:
-        zip_path: Kaggle ZIP containing the transaction and cards CSV files.
-        output_path: Optional destination CSV.  It is replaced only after a
-            complete successful conversion.
-        chunksize: Number of raw transaction rows read at a time.
-        target_rows: Size of a deterministic uniform sample, or ``None`` to
-            retain every row.  Sampling is label-independent and therefore
-            leaves the source class imbalance natural.
-        seed: Seed mixed into sampling priorities.
-
-    Returns:
-        A chronological, privacy-minimized dataframe containing only
-        :data:`OUTPUT_COLUMNS`.
-
-    Raises:
-        ValueError: If the archive schema or a source value is invalid.
-        TypeError: If ``seed`` is not an integer.
-        FileNotFoundError: If ``zip_path`` does not exist.
+    Sampling is deterministic and does not use the fraud label. Pass
+    ``target_rows=None`` to keep every eligible purchase. An output file is
+    replaced only after the full conversion succeeds.
     """
     archive_path = Path(zip_path).expanduser().resolve()
     if not archive_path.is_file():
@@ -949,7 +928,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the command-line adapter and print a concise completion summary."""
+    """Run the adapter from the command line."""
     arguments = _build_parser().parse_args(argv)
     result = adapt_tabformer_archive(
         arguments.zip_path,

@@ -1,4 +1,4 @@
-"""Shared feature engineering for both training and inference."""
+"""Features shared by training and prediction."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from config import (
 
 
 def engineer_features(data: pd.DataFrame | Mapping[str, Any]) -> pd.DataFrame:
-    """Return a copy with deterministic risk-related derived features."""
+    """Add the derived risk features to a copy of the input."""
     if isinstance(data, Mapping):
         dataframe = pd.DataFrame([dict(data)])
     elif isinstance(data, pd.DataFrame):

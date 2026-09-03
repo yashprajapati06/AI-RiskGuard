@@ -218,3 +218,19 @@ def test_model_preprocessor_dimension_mismatch_is_detected(
     joblib.dump(model, model_path)
 
     assert not bootstrap.model_artifacts_are_valid()
+
+
+def test_tampered_model_artifact_is_detected(tmp_path, monkeypatch) -> None:
+    bootstrap, model_path, _ = _copy_artifact_set(tmp_path, monkeypatch)
+    model_path.write_bytes(model_path.read_bytes() + b"tampered")
+
+    assert not bootstrap.model_artifacts_are_valid()
+
+
+def test_stale_training_dataset_is_detected(tmp_path, monkeypatch) -> None:
+    bootstrap, _, _ = _copy_artifact_set(tmp_path, monkeypatch)
+    changed_dataset = tmp_path / "transactions.csv"
+    changed_dataset.write_bytes(DATA_PATH.read_bytes() + b"\n")
+    monkeypatch.setattr(bootstrap, "DATA_PATH", changed_dataset)
+
+    assert not bootstrap.model_artifacts_are_valid()

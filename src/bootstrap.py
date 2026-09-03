@@ -1,4 +1,4 @@
-"""Safe, idempotent project initialization for Streamlit and scripts."""
+"""Project startup and artifact checks."""
 
 from __future__ import annotations
 
@@ -22,22 +22,32 @@ from config import (
 from src.data_generator import generate_synthetic_transactions
 from src.database import initialize_database
 from src.evaluation import get_fraud_class_index
-from src.utils import read_json, validate_model_metadata
+from src.utils import file_sha256, read_json, validate_model_metadata
 
 LOGGER = logging.getLogger(__name__)
 
 
 def model_artifacts_are_valid() -> bool:
-    """Check that the model, preprocessor, and required metadata are loadable."""
+    """Check the saved model files and metadata."""
     if not all(
         path.exists() for path in (MODEL_PATH, PREPROCESSOR_PATH, MODEL_METADATA_PATH)
     ):
         return False
     try:
-        model = joblib.load(MODEL_PATH)
-        preprocessor = joblib.load(PREPROCESSOR_PATH)
         metadata = read_json(MODEL_METADATA_PATH)
         validate_model_metadata(metadata)
+        if (
+            file_sha256(DATA_PATH) != metadata["dataset_sha256"].casefold()
+            or file_sha256(MODEL_PATH) != metadata["model_sha256"].casefold()
+            or file_sha256(PREPROCESSOR_PATH)
+            != metadata["preprocessor_sha256"].casefold()
+        ):
+            LOGGER.warning(
+                "Model artifact or training-dataset digest mismatch; retraining is required."
+            )
+            return False
+        model = joblib.load(MODEL_PATH)
+        preprocessor = joblib.load(PREPROCESSOR_PATH)
         get_fraud_class_index(model)
         transformed_feature_count = len(preprocessor.get_feature_names_out())
         return (
@@ -69,7 +79,7 @@ def model_artifacts_are_valid() -> bool:
 
 
 def initialize_project() -> dict[str, Any]:
-    """Ensure required local data, model artifacts, and database exist."""
+    """Set up the data, model files, and database when needed."""
     ensure_directories()
     generated_data = False
     trained_model = False

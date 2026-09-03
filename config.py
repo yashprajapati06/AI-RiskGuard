@@ -1,4 +1,4 @@
-"""Central configuration for the AI RiskGuard educational prototype."""
+"""Project settings."""
 
 from pathlib import Path
 
@@ -14,16 +14,15 @@ DATABASE_PATH = DATABASE_DIR / "riskguard.db"
 MODEL_PATH = MODELS_DIR / "fraud_model.pkl"
 PREPROCESSOR_PATH = MODELS_DIR / "preprocessor.pkl"
 MODEL_METADATA_PATH = MODELS_DIR / "model_metadata.json"
-ARTIFACT_SCHEMA_VERSION = "2.0.0"
+ARTIFACT_SCHEMA_VERSION = "2.1.0"
 
 RANDOM_STATE = 42
 DATASET_SIZE = 12_000
 TEST_SIZE = 0.20
 EVENT_TIMESTAMP_COLUMN = "event_timestamp"
 
-# The included model is trained from IBM's fully synthetic TabFormer transaction
-# data. The fixed multiplier only aligns the source's dollar-denominated values
-# with this prototype's INR user interface; it is not a live exchange rate.
+# TabFormer amounts are in USD. This fixed multiplier is only for the INR demo;
+# it is not a live exchange rate.
 TABFORMER_DATASET_URL = "https://github.com/IBM/TabFormer"
 TABFORMER_KAGGLE_HANDLE = "ealtman2019/credit-card-transactions"
 TABFORMER_DOWNLOAD_URL = (
@@ -63,10 +62,8 @@ DERIVED_FEATURES = [
     "unusual_hour",
 ]
 
-# The IBM source does not contain trustworthy device novelty/type or an
-# independently supplied merchant risk score. Payment method is constant (Card).
-# Those inputs remain available as rule/context inputs, but are excluded from ML
-# rather than being fabricated.
+# TabFormer has no reliable device fields or merchant score, and its payment
+# method is always Card. Keep those inputs for rules and context, not the model.
 MODEL_RAW_FEATURES = [
     "amount",
     "previous_failed_txns",
@@ -101,13 +98,13 @@ FEATURE_HIGH_VELOCITY_THRESHOLD = 5
 FEATURE_FAILED_ATTEMPT_THRESHOLD = 3
 UNUSUAL_HOURS = (0, 1, 2, 3, 4)
 
-# Combined score configuration.
+# Score blend and cutoffs.
 ML_WEIGHT = 0.70
 RULE_WEIGHT = 0.30
 LOW_RISK_THRESHOLD = 35.0
 HIGH_RISK_THRESHOLD = 70.0
 
-# Prototype risk rules for educational purposes. These are not production rules.
+# Demo rules only; production thresholds need independent validation.
 RULE_THRESHOLDS = {
     "high_amount": 25_000.0,
     "failed_transactions": 3,
@@ -151,6 +148,6 @@ DISCLAIMER = (
 
 
 def ensure_directories() -> None:
-    """Create runtime directories without modifying existing content."""
+    """Create the folders used at runtime."""
     for directory in (DATA_DIR, DATABASE_DIR, MODELS_DIR):
         directory.mkdir(parents=True, exist_ok=True)

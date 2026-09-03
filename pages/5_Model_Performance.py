@@ -1,4 +1,4 @@
-"""Held-out model metrics, comparison, and global importance."""
+"""Held-out metrics and training diagnostics for the saved model."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ import streamlit as st
 
 from config import DATA_PATH, MODEL_METADATA_PATH
 from src.monitoring import get_monitoring_summary
-from src.ui_helpers import configure_page, ensure_app_ready, render_header
+from src.ui_helpers import configure_page, ensure_app_ready, render_header, style_chart
 from src.utils import read_json, validate_model_metadata
 
 configure_page("Model Performance", "🧠")
 ensure_app_ready()
 render_header(
-    "🧠 Model Performance",
-    "Reproducible held-out test metrics from the latest local training run.",
+    "Model performance",
+    "Held-out results, model comparison, and training context from the latest run.",
 )
 
 if not MODEL_METADATA_PATH.exists():
@@ -37,7 +37,7 @@ except (OSError, ValueError, TypeError) as exc:
 selected_name = metadata["selected_model"]
 selected_metrics = metadata["models"][selected_name]
 
-st.subheader("Training summary")
+st.subheader("Latest training run")
 top_columns = st.columns(4)
 top_columns[0].metric("Model", selected_name.replace("_", " ").title())
 top_columns[1].metric("Dataset Size", f"{metadata['dataset_size']:,}")
@@ -70,7 +70,7 @@ with st.expander("Data provenance and leakage controls"):
         """
     )
 
-st.markdown("#### Fraud-focused evaluation metrics")
+st.markdown("#### Fraud-focused metrics")
 metric_columns = st.columns(4)
 for column, (label, key) in zip(
     metric_columns,
@@ -96,20 +96,18 @@ for column, (label, key) in zip(
 
 st.caption(f"Selection rule: {metadata['selection_reason']}")
 st.warning(
-    "Fraud is the minority class, so accuracy can look high even when a model misses "
-    "fraud. Tuning therefore emphasizes recall and F1 while limiting mean "
-    "cross-validation false positives to the documented review-capacity threshold."
+    "Fraud is the minority class, so accuracy alone can be misleading. Model tuning "
+    "prioritizes recall and F1 while keeping cross-validation false positives within "
+    "the documented review-capacity limit."
 )
-st.info(
+st.markdown(
     f"Hyperparameters and the winning model were selected with "
     f"{metadata['cv_folds']}-fold cross-validation on training rows only. The final "
-    f"metrics below come from the untouched {metadata['test_rows']:,}-row test "
-    "partition."
+    f"metrics come from the untouched {metadata['test_rows']:,}-row test partition."
 )
 st.info(
-    "The saved class-weighted classifier's `predict_proba()` output is presented as "
-    "an uncalibrated fraud-likelihood estimate. It supports relative ranking and the "
-    "prototype risk score, but should not be interpreted as a real-world fraud rate."
+    "Score interpretation: the classifier output is an uncalibrated likelihood "
+    "estimate for relative ranking. It is not a real-world fraud rate."
 )
 
 with st.expander("What do these metrics mean?"):
@@ -142,7 +140,7 @@ comparison_columns = [
     "cv_selection_score",
     "selection_score",
 ]
-st.subheader("Tuned Logistic Regression vs Random Forest")
+st.subheader("Model comparison")
 st.dataframe(comparison[comparison_columns].round(4), hide_index=True, width="stretch")
 st.caption(
     "CV selection score determines the saved model. Test selection score is shown "
@@ -166,7 +164,7 @@ with left:
         title="Confusion matrix (held-out test set)",
         labels={"x": "Prediction", "y": "Actual", "color": "Count"},
     )
-    st.plotly_chart(figure, width="stretch")
+    st.plotly_chart(style_chart(figure), width="stretch")
 with right:
     tn, fp = matrix[0]
     fn, tp = matrix[1]
@@ -202,13 +200,13 @@ if not importance.empty:
         title="Global feature importance (selected model)",
         labels={"importance": "Importance magnitude", "feature": "Transformed feature"},
     )
-    st.plotly_chart(figure, width="stretch")
+    st.plotly_chart(style_chart(figure), width="stretch")
     st.caption(
         "Global importance describes aggregate model behavior; it is not a per-transaction causal explanation."
     )
 
 monitoring = get_monitoring_summary()
-st.subheader("Prediction monitoring")
+st.subheader("Saved-assessment monitoring")
 monitor_columns = st.columns(3)
 monitor_columns[0].metric(
     "Live Average Risk", f"{monitoring['average_prediction_risk']:.2f}"
@@ -236,12 +234,14 @@ with st.expander("Training dataset visual checks"):
         )
         label_counts.columns = ["Class", "Count"]
         st.plotly_chart(
-            px.bar(
-                label_counts,
-                x="Class",
-                y="Count",
-                color="Class",
-                title="Fraud vs genuine distribution",
+            style_chart(
+                px.bar(
+                    label_counts,
+                    x="Class",
+                    y="Count",
+                    color="Class",
+                    title="Fraud vs genuine distribution",
+                )
             ),
             width="stretch",
         )
@@ -257,15 +257,17 @@ with st.expander("Training dataset visual checks"):
         rates = data.groupby(group_column, as_index=False)["fraud"].mean()
         rates["fraud_rate_percent"] = rates["fraud"] * 100
         st.plotly_chart(
-            px.bar(
-                rates,
-                x=group_column,
-                y="fraud_rate_percent",
-                title=chart_title,
-                labels={
-                    group_column: axis_label,
-                    "fraud_rate_percent": "Fraud rate (%)",
-                },
+            style_chart(
+                px.bar(
+                    rates,
+                    x=group_column,
+                    y="fraud_rate_percent",
+                    title=chart_title,
+                    labels={
+                        group_column: axis_label,
+                        "fraud_rate_percent": "Fraud rate (%)",
+                    },
+                )
             ),
             width="stretch",
         )
@@ -273,13 +275,15 @@ with st.expander("Training dataset visual checks"):
         data.sample(n=100_000, random_state=42) if len(data) > 100_000 else data
     )
     st.plotly_chart(
-        px.histogram(
-            histogram_data,
-            x="amount",
-            color=histogram_data["fraud"].map({0: "Genuine", 1: "Fraud"}),
-            nbins=60,
-            title="Transaction amount distribution",
-            labels={"color": "Class", "amount": "Amount (₹)"},
+        style_chart(
+            px.histogram(
+                histogram_data,
+                x="amount",
+                color=histogram_data["fraud"].map({0: "Genuine", 1: "Fraud"}),
+                nbins=60,
+                title="Transaction amount distribution",
+                labels={"color": "Class", "amount": "Amount (₹)"},
+            )
         ),
         width="stretch",
     )

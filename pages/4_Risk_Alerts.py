@@ -1,4 +1,4 @@
-"""High-risk alert review page."""
+"""Review queue for saved high-risk assessments."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ from src.ui_helpers import configure_page, ensure_app_ready, render_header
 configure_page("Risk Alerts", "🚨")
 ensure_app_ready()
 render_header(
-    "🚨 High-Risk Alerts",
-    "Manual-review recommendations created when a saved combined score reaches HIGH risk.",
+    "High-risk alerts",
+    "A focused queue of saved assessments that need prompt manual review.",
 )
 
 alerts = get_alerts()
 if alerts.empty:
-    st.success("No HIGH-risk manual-review recommendations are currently stored.")
+    st.success("The review queue is clear. No HIGH-risk alerts are currently stored.")
     st.caption(
         f"An alert is created only after a saved analysis reaches "
         f"{HIGH_RISK_THRESHOLD:g} or above. Use "
@@ -25,7 +25,9 @@ if alerts.empty:
     )
     st.stop()
 
+st.subheader("Analyst review queue")
 st.metric("Total High-Risk Alerts", f"{len(alerts):,}")
+st.caption("Alerts are listed newest first. Select a transaction to review its reason.")
 st.dataframe(
     alerts[
         ["transaction_id", "risk_score", "risk_level", "reason", "created_at"]
@@ -42,10 +44,10 @@ st.dataframe(
     width="stretch",
 )
 
-st.subheader("Selected alert review")
+st.subheader("Selected alert")
 selected_id = st.selectbox("Select Alert", alerts["transaction_id"].tolist())
 alert = alerts.loc[alerts["transaction_id"] == selected_id].iloc[0]
-st.error(f"🚨 HIGH RISK · {alert['risk_score']:.2f} / 100")
+st.error(f"HIGH RISK · {alert['risk_score']:.2f} / 100")
 st.markdown(f"**Transaction:** {alert['transaction_id']}")
 st.markdown(f"**Triggered risk explanation:** {alert['reason']}")
 st.caption(

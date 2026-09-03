@@ -1,3 +1,3 @@
-"""Core package for AI RiskGuard."""
+"""AI RiskGuard application package."""
 
 __version__ = "1.0.0"

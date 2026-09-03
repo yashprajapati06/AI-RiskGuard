@@ -1,4 +1,4 @@
-"""Honest model and prediction monitoring summaries."""
+"""Monitoring data for predictions and model performance."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from src.utils import read_json, validate_model_metadata
 
 
 def get_monitoring_summary() -> dict[str, Any]:
-    """Combine live prediction aggregates with held-out evaluation metadata."""
+    """Combine saved prediction totals with test-set metrics."""
     live = get_dashboard_summary()
     metadata = {}
     if MODEL_METADATA_PATH.exists():

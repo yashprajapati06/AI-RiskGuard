@@ -1,4 +1,4 @@
-"""SQLite persistence for analyzed transactions and high-risk alerts."""
+"""SQLite storage for transaction results and alerts."""
 
 from __future__ import annotations
 
@@ -22,14 +22,14 @@ LOGGER = logging.getLogger(__name__)
 
 
 class DuplicateTransactionError(ValueError):
-    """Raised when a previously stored transaction ID is submitted again."""
+    """Raised when a transaction ID is already stored."""
 
 
 @contextmanager
 def database_connection(
     database_path: Path | str = DATABASE_PATH,
 ) -> Iterator[sqlite3.Connection]:
-    """Yield a configured SQLite connection and always close it."""
+    """Open a SQLite connection and close it afterward."""
     path = Path(database_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path, timeout=15)
@@ -42,7 +42,7 @@ def database_connection(
 
 
 def initialize_database(database_path: Path | str = DATABASE_PATH) -> None:
-    """Create database tables and indexes idempotently."""
+    """Create missing tables and indexes."""
     ensure_directories()
     with database_connection(database_path) as connection:
         connection.executescript(
@@ -103,10 +103,9 @@ def save_analysis(
     analysis: Mapping[str, Any],
     database_path: Path | str = DATABASE_PATH,
 ) -> None:
-    """Validate and atomically persist one recommendation and optional HIGH alert.
+    """Save an analysis and create an alert for a HIGH result.
 
-    Revalidating scores at the database boundary prevents inconsistent risk levels
-    or out-of-range values from being stored by a caller that bypasses Streamlit.
+    Validate again here so callers outside the UI cannot store invalid scores.
     """
     validate_transaction(transaction)
     for identifier in ("transaction_id", "user_id", "merchant_id"):
@@ -215,7 +214,7 @@ def get_transactions(
     limit: int | None = None,
     database_path: Path | str = DATABASE_PATH,
 ) -> pd.DataFrame:
-    """Read newest transactions with parameterized optional filters."""
+    """Fetch recent transactions using the supplied filters."""
     initialize_database(database_path)
     conditions = ["final_risk_score >= ?"]
     parameters: list[Any] = [float(minimum_risk_score)]
@@ -241,7 +240,7 @@ def get_alerts(
     limit: int | None = None,
     database_path: Path | str = DATABASE_PATH,
 ) -> pd.DataFrame:
-    """Read newest high-risk alerts."""
+    """Fetch recent high-risk alerts."""
     initialize_database(database_path)
     query = "SELECT * FROM alerts ORDER BY created_at DESC"
     parameters: list[Any] = []
@@ -253,7 +252,7 @@ def get_alerts(
 
 
 def get_dashboard_summary(database_path: Path | str = DATABASE_PATH) -> dict[str, Any]:
-    """Return dashboard KPIs using aggregate SQL over real stored results."""
+    """Calculate dashboard totals from saved transactions."""
     initialize_database(database_path)
     with database_connection(database_path) as connection:
         row = connection.execute(

@@ -1,4 +1,4 @@
-"""Build the leakage-safe scikit-learn preprocessing transformer."""
+"""Preprocessing used by the fraud model."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from config import CATEGORICAL_FEATURES, NUMERICAL_FEATURES
 
 
 def build_preprocessor() -> ColumnTransformer:
-    """Create an unfitted transformer for numeric and categorical features."""
+    """Build the unfitted feature transformer."""
     numerical_pipeline = Pipeline(
         steps=[
             ("imputer", SimpleImputer(strategy="median")),

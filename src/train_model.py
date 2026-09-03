@@ -1,13 +1,11 @@
-"""Train, compare, select, and persist fraud-detection models."""
+"""Fraud model training and selection."""
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any
 
-import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
@@ -43,7 +41,13 @@ from src.evaluation import (
 )
 from src.feature_engineering import engineer_features
 from src.preprocessing import build_preprocessor
-from src.utils import configure_logging, read_json, write_json
+from src.utils import (
+    atomic_joblib_dump,
+    configure_logging,
+    file_sha256,
+    read_json,
+    write_json,
+)
 from src.validation import validate_training_dataset
 
 LOGGER = logging.getLogger(__name__)
@@ -61,20 +65,11 @@ CV_SCORING = {
 
 
 def _project_relative(path: Any) -> str:
-    """Return a console-safe path relative to the project when possible."""
+    """Format a path for console output."""
     try:
         return path.resolve().relative_to(BASE_DIR.resolve()).as_posix()
     except ValueError:
         return path.name
-
-
-def _file_sha256(path: Any) -> str:
-    """Return a streaming SHA-256 digest for dataset-manifest verification."""
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for block in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def _build_models() -> dict[str, Any]:
@@ -84,8 +79,7 @@ def _build_models() -> dict[str, Any]:
             random_state=RANDOM_STATE,
         ),
         "random_forest": RandomForestClassifier(
-            # Keep the persisted demonstration artifact deployable on GitHub and
-            # Streamlit Community Cloud while retaining a meaningful ensemble.
+            # Keep the demo artifact small enough for GitHub and Streamlit Cloud.
             n_estimators=120,
             random_state=RANDOM_STATE,
             n_jobs=1,
@@ -94,7 +88,7 @@ def _build_models() -> dict[str, Any]:
 
 
 def _parameter_grids(target: pd.Series) -> dict[str, dict[str, list[Any]]]:
-    """Return bounded class weights scaled to the training-only imbalance."""
+    """Build class-weight options from the training imbalance."""
     counts = target.value_counts()
     if not {0, 1}.issubset(counts.index):
         raise ValueError("Class-weight tuning requires both target classes.")
@@ -125,7 +119,7 @@ def _parameter_grids(target: pd.Series) -> dict[str, dict[str, list[Any]]]:
 
 
 def _cv_composite_scores(cv_results: dict[str, Any]) -> np.ndarray:
-    """Calculate the documented composite for every CV configuration."""
+    """Calculate the selection score for each CV candidate."""
     scores = np.zeros(len(cv_results["params"]), dtype=float)
     for metric_name, weight in MODEL_SELECTION_WEIGHTS.items():
         scores += np.asarray(cv_results[f"mean_test_{metric_name}"]) * weight
@@ -133,7 +127,7 @@ def _cv_composite_scores(cv_results: dict[str, Any]) -> np.ndarray:
 
 
 def _select_cv_candidate(cv_results: dict[str, Any]) -> int:
-    """Choose the strongest CV candidate under the false-positive constraint."""
+    """Pick the best CV result that stays under the false-positive limit."""
     composite_scores = _cv_composite_scores(cv_results)
     specificity = np.asarray(cv_results["mean_test_specificity"], dtype=float)
     false_positive_rates = 1.0 - specificity
@@ -158,7 +152,7 @@ def _select_cv_candidate(cv_results: dict[str, Any]) -> int:
 
 
 def _cv_summary(search: GridSearchCV) -> dict[str, float]:
-    """Return serializable mean validation metrics for the chosen configuration."""
+    """Collect mean CV metrics for the selected parameters."""
     index = int(search.best_index_)
     summary = {
         metric_name: float(search.cv_results_[f"mean_test_{metric_name}"][index])
@@ -170,7 +164,7 @@ def _cv_summary(search: GridSearchCV) -> dict[str, float]:
 
 
 def _clean_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
-    """Remove Pipeline prefixes before parameters are written to metadata."""
+    """Strip Pipeline prefixes before saving parameters."""
     return {
         key.removeprefix("classifier__"): value for key, value in parameters.items()
     }
@@ -186,11 +180,10 @@ def split_training_dataset(
     pd.Series,
     dict[str, Any],
 ]:
-    """Engineer features and create the locked outer 80/20 partition.
+    """Engineer features and make the outer 80/20 split.
 
-    External transaction data is evaluated chronologically when an event timestamp
-    is present. The fallback generated dataset has no timestamp and therefore keeps
-    the original reproducible stratified split.
+    Timestamped data is split chronologically. The generated fallback has no
+    timestamp, so it uses a reproducible stratified split.
     """
     engineered = engineer_features(dataframe)
     features = engineered[MODEL_FEATURES]
@@ -245,7 +238,7 @@ def split_training_dataset(
 def _training_tuning_sample(
     features: pd.DataFrame, target: pd.Series
 ) -> tuple[pd.DataFrame, pd.Series]:
-    """Return a bounded stratified sample drawn only from training rows."""
+    """Take the stratified tuning sample from training rows only."""
     if len(features) <= CV_TUNING_MAX_ROWS:
         return features, target
     tuning_features, _, tuning_target, _ = train_test_split(
@@ -259,7 +252,7 @@ def _training_tuning_sample(
 
 
 def _load_dataset_provenance(dataframe: pd.DataFrame) -> dict[str, Any]:
-    """Load explicit source provenance without inferring origin from columns."""
+    """Load source details from the dataset manifest."""
     if not DATASET_METADATA_PATH.exists():
         return {
             "source_id": "unverified_local_dataset",
@@ -297,7 +290,7 @@ def _load_dataset_provenance(dataframe: pd.DataFrame) -> dict[str, Any]:
     if expected_digest is not None:
         if not isinstance(expected_digest, str) or len(expected_digest) != 64:
             raise ValueError("Dataset metadata contains an invalid SHA-256 digest.")
-        if _file_sha256(DATA_PATH) != expected_digest.casefold():
+        if file_sha256(DATA_PATH) != expected_digest.casefold():
             raise ValueError(
                 "Dataset hash does not match data/dataset_metadata.json. "
                 "Regenerate the processed dataset before training."
@@ -306,11 +299,10 @@ def _load_dataset_provenance(dataframe: pd.DataFrame) -> dict[str, Any]:
 
 
 def train_and_save_models() -> dict[str, Any]:
-    """Tune, train, compare, and persist candidates without test-set leakage.
+    """Tune, compare, and save the candidate models.
 
-    Hyperparameters and model selection use stratified cross-validation inside the
-    training partition. The locked test partition is transformed only by the final
-    refitted pipelines and is used exclusively for final performance reporting.
+    Model choice happens inside training-only CV. The held-out split is evaluated
+    after refitting and never affects selection.
     """
     configure_logging()
     ensure_directories()
@@ -328,8 +320,8 @@ def train_and_save_models() -> dict[str, Any]:
     target = engineered["fraud"].astype(int)
     tuning_features, tuning_target = _training_tuning_sample(x_train, y_train)
 
-    # MODEL_FEATURES is an explicit allow-list: identifiers, timestamps, rule-only
-    # inputs, and the fraud target are never passed to either classifier.
+    # Only MODEL_FEATURES reaches the classifiers; IDs, timestamps, rule-only
+    # fields, and the fraud target stay out.
     tuning_counts = tuning_target.value_counts()
     if len(tuning_counts) < 2 or tuning_counts.min() < CV_FOLDS:
         raise ValueError(
@@ -365,13 +357,12 @@ def train_and_save_models() -> dict[str, Any]:
             return_train_score=False,
         )
         search.fit(tuning_features, tuning_target)
-        # GridSearchCV is intentionally bounded to a training-only sample for
-        # tractability. The chosen pipeline is then refitted on every training row.
+        # Tune on a manageable training-only sample, then refit on all training rows.
         fitted_pipeline = clone(pipeline).set_params(**search.best_params_)
         fitted_pipeline.fit(x_train, y_train)
         fitted_pipelines[model_name] = fitted_pipeline
 
-        # Held-out metrics are calculated only after CV tuning has finished.
+        # Score the refitted pipeline once on the held-out set.
         evaluations[model_name] = evaluate_classifier(fitted_pipeline, x_test, y_test)
         evaluations[model_name]["selection_score"] = model_selection_score(
             evaluations[model_name]
@@ -385,8 +376,7 @@ def train_and_save_models() -> dict[str, Any]:
             search.best_params_
         )
 
-    # Selection uses training-only CV results; the test metrics above cannot affect
-    # which model is persisted.
+    # Test metrics are reporting only; CV results decide which model is saved.
     selected_name = max(
         fitted_pipelines,
         key=lambda name: (
@@ -403,10 +393,12 @@ def train_and_save_models() -> dict[str, Any]:
     feature_importance = extract_feature_importance(selected_model, feature_names)
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    # Compression avoids unnecessarily large deployable artifacts without
-    # changing the fitted estimator or any reported metric.
-    joblib.dump(selected_model, MODEL_PATH, compress=3)
-    joblib.dump(preprocessor, PREPROCESSOR_PATH, compress=3)
+    # Compression keeps the checked-in artifacts reasonably small.
+    atomic_joblib_dump(selected_model, MODEL_PATH, compress=3)
+    atomic_joblib_dump(preprocessor, PREPROCESSOR_PATH, compress=3)
+    dataset_digest = file_sha256(DATA_PATH)
+    model_digest = file_sha256(MODEL_PATH)
+    preprocessor_digest = file_sha256(PREPROCESSOR_PATH)
 
     timestamp = datetime.now(timezone.utc).isoformat()
     metadata: dict[str, Any] = {
@@ -441,7 +433,9 @@ def train_and_save_models() -> dict[str, Any]:
         "source_dataset_rows": int(provenance["source_rows"]),
         "source_sampling_strategy": str(provenance["sampling_strategy"]),
         "amount_normalization": str(provenance["amount_normalization"]),
-        "dataset_sha256": str(provenance.get("dataset_sha256", "not_recorded")),
+        "dataset_sha256": dataset_digest,
+        "model_sha256": model_digest,
+        "preprocessor_sha256": preprocessor_digest,
         "upstream_license": str(provenance.get("upstream_license", "not_recorded")),
         "eligible_positive_purchase_rows": int(
             provenance.get("eligible_positive_purchase_rows", len(engineered))
