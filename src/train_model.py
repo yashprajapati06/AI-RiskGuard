@@ -45,6 +45,7 @@ from src.utils import (
     atomic_joblib_dump,
     configure_logging,
     file_sha256,
+    normalized_text_sha256,
     read_json,
     write_json,
 )
@@ -290,7 +291,7 @@ def _load_dataset_provenance(dataframe: pd.DataFrame) -> dict[str, Any]:
     if expected_digest is not None:
         if not isinstance(expected_digest, str) or len(expected_digest) != 64:
             raise ValueError("Dataset metadata contains an invalid SHA-256 digest.")
-        if file_sha256(DATA_PATH) != expected_digest.casefold():
+        if normalized_text_sha256(DATA_PATH) != expected_digest.casefold():
             raise ValueError(
                 "Dataset hash does not match data/dataset_metadata.json. "
                 "Regenerate the processed dataset before training."
@@ -396,7 +397,7 @@ def train_and_save_models() -> dict[str, Any]:
     # Compression keeps the checked-in artifacts reasonably small.
     atomic_joblib_dump(selected_model, MODEL_PATH, compress=3)
     atomic_joblib_dump(preprocessor, PREPROCESSOR_PATH, compress=3)
-    dataset_digest = file_sha256(DATA_PATH)
+    dataset_digest = normalized_text_sha256(DATA_PATH)
     model_digest = file_sha256(MODEL_PATH)
     preprocessor_digest = file_sha256(PREPROCESSOR_PATH)
 
@@ -434,6 +435,7 @@ def train_and_save_models() -> dict[str, Any]:
         "source_sampling_strategy": str(provenance["sampling_strategy"]),
         "amount_normalization": str(provenance["amount_normalization"]),
         "dataset_sha256": dataset_digest,
+        "dataset_hash_normalization": "UTF-8 text with line endings normalized to LF",
         "model_sha256": model_digest,
         "preprocessor_sha256": preprocessor_digest,
         "upstream_license": str(provenance.get("upstream_license", "not_recorded")),

@@ -17,5 +17,6 @@
   "historical_feature_policy": "Features use only the current positive payment and strictly prior positive payments for the same synthetic user; the current fraud label and future events are never used.",
   "amount_filter": "Source rows with Amount <= 0 are excluded as refunds, credits, or zero-value events before history calculation and sampling.",
   "amount_normalization": "Positive source USD values multiplied by fixed 83 for INR UI compatibility; this is not a live exchange rate.",
-  "dataset_sha256": "ef5bf3b41713d9fcc6f0a01145f8e0f902a846e20ba655585ea06d366b3925a7"
+  "dataset_sha256": "4b6e60c246d3322e09f9af59a28e7d40d9e478006c1c25bb1213a6520560455f",
+  "dataset_hash_normalization": "UTF-8 text with line endings normalized to LF"
 }

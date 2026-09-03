@@ -7,6 +7,7 @@ import pytest
 from config import ARTIFACT_SCHEMA_VERSION
 from src.utils import (
     atomic_joblib_dump,
+    normalized_text_sha256,
     parse_json_list,
     read_json,
     validate_model_metadata,
@@ -55,6 +56,7 @@ def _valid_metadata() -> dict:
         "source_sampling_strategy": "complete_fixture",
         "amount_normalization": "None.",
         "dataset_sha256": "0" * 64,
+        "dataset_hash_normalization": "UTF-8 text with line endings normalized to LF",
         "model_sha256": "1" * 64,
         "preprocessor_sha256": "2" * 64,
         "training_rows": 3,
@@ -135,6 +137,15 @@ def test_atomic_joblib_dump_preserves_existing_artifact(
 
     assert artifact_path.read_bytes() == b"known-good"
     assert not artifact_path.with_suffix(".pkl.tmp").exists()
+
+
+def test_text_digest_is_independent_of_line_endings(tmp_path) -> None:
+    lf_path = tmp_path / "lf.csv"
+    crlf_path = tmp_path / "crlf.csv"
+    lf_path.write_bytes(b"id,value\n1,alpha\n2,beta\n")
+    crlf_path.write_bytes(b"id,value\r\n1,alpha\r\n2,beta\r\n")
+
+    assert normalized_text_sha256(lf_path) == normalized_text_sha256(crlf_path)
 
 
 def test_model_metadata_rejects_incomplete_refit() -> None:

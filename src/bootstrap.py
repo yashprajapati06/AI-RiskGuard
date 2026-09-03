@@ -22,7 +22,12 @@ from config import (
 from src.data_generator import generate_synthetic_transactions
 from src.database import initialize_database
 from src.evaluation import get_fraud_class_index
-from src.utils import file_sha256, read_json, validate_model_metadata
+from src.utils import (
+    file_sha256,
+    normalized_text_sha256,
+    read_json,
+    validate_model_metadata,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +42,8 @@ def model_artifacts_are_valid() -> bool:
         metadata = read_json(MODEL_METADATA_PATH)
         validate_model_metadata(metadata)
         if (
-            file_sha256(DATA_PATH) != metadata["dataset_sha256"].casefold()
+            normalized_text_sha256(DATA_PATH)
+            != metadata["dataset_sha256"].casefold()
             or file_sha256(MODEL_PATH) != metadata["model_sha256"].casefold()
             or file_sha256(PREPROCESSOR_PATH)
             != metadata["preprocessor_sha256"].casefold()

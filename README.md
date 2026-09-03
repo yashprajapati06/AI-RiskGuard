@@ -221,8 +221,9 @@ not commit the archive or extracted source files. The small
 models trained from it must not be described as TabFormer-derived.
 
 Model and preprocessor writes are staged before replacement. Their SHA-256
-digests, together with the training-dataset digest, are saved in metadata and
-checked at startup to catch stale, corrupted, or mismatched artifacts.
+digests, together with a line-ending-independent training-dataset digest, are
+saved in metadata and checked at startup to catch stale, corrupted, or
+mismatched artifacts across Windows and Linux deployments.
 
 ## Tests
 

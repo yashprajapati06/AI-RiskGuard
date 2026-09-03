@@ -87,6 +87,15 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def normalized_text_sha256(path: Path) -> str:
+    """Hash UTF-8 text after normalizing line endings to LF."""
+    digest = hashlib.sha256()
+    with path.open("r", encoding="utf-8", newline=None) as source:
+        for block in iter(lambda: source.read(1024 * 1024), ""):
+            digest.update(block.encode("utf-8"))
+    return digest.hexdigest()
+
+
 def atomic_joblib_dump(payload: Any, path: Path, *, compress: int = 3) -> None:
     """Write a joblib artifact through a temporary file."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -128,6 +137,7 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
         "transformed_feature_count",
         "amount_normalization",
         "dataset_sha256",
+        "dataset_hash_normalization",
         "model_sha256",
         "preprocessor_sha256",
     }
@@ -182,6 +192,7 @@ def validate_model_metadata(metadata: dict[str, Any]) -> None:
         "data_origin",
         "source_sampling_strategy",
         "amount_normalization",
+        "dataset_hash_normalization",
     ):
         if not isinstance(metadata[key], str) or not metadata[key].strip():
             raise TypeError(f"Model metadata {key} must be a non-empty string.")
